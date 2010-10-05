@@ -5,5 +5,8 @@ PyNX - Python tools for Nano-structures Crystallography
 
 PyNX is open-source software. Please read the LICENSE file for more information.
 
+Note that CPU computing uses the sse_mathfun.header, which is distributed
+under the zlib license. See http://gruntthepeon.free.fr/ssemath/
+
 The documentation for PyNX is available online on the PyNX wiki at:
    http://pynx.sf.net/
