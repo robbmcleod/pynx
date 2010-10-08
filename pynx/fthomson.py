@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+
+#PyNX - Python tools for Nano-structures Crystallography
+#   (c) 2008-2010 Vincent Favre-Nicolin vincefn@users.sourceforge.net
+#       2008-2010 Université Joseph Fourier, Grenoble (France)
+#       This project was developped at the CEA/INAC/SP2M (Grenoble, France)
+
 from numpy import exp
 
 d_fthomson_IT92={"H":     ([ 0.489918, 0.262003, 0.196767, 0.049879 ],
