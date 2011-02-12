@@ -242,10 +242,10 @@ class CPUThread_Fhkl(threading.Thread):
       vx,vy,vz=self.x,self.y,self.z
       
       # TODO: take into account occupancy !
-      
+      pth= os.path.dirname(os.path.abspath(__file__))
       fhkl_xyz = weave.inline("Py_BEGIN_ALLOW_THREADS\n" + code_CPU_fhkl_xyz+ "Py_END_ALLOW_THREADS\n",
                               ['freal','fimag','vh', 'vk', 'vl', 'vx', 'vy', 'vz', 'nhkl', 'natoms'],
-                              extra_compile_args=["-O3 -w -ffast-math -msse -msse2  -msse3 -msse4.1 -march=core2 -mfpmath=sse -fstrict-aliasing -pipe -fomit-frame-pointer -funroll-loops -ftree-vectorize -ftree-vectorizer-verbose=0"],
+                              extra_compile_args=["-O3 -I"+pth+" -w -ffast-math -msse -msse2  -msse3 -msse4.1 -march=core2 -mfpmath=sse -fstrict-aliasing -pipe -fomit-frame-pointer -funroll-loops -ftree-vectorize -ftree-vectorizer-verbose=0"],
                               compiler = 'gcc',
                               support_code="""#define USE_SSE2
                                               #include "sse_mathfun.h"
