@@ -19,12 +19,14 @@ try:
   assert drv.Device.count() >= 1
   only_cpu=False
 except:
+  print "PyNX: Failed importing PyCUDA, or no graphics card found => using CPU calculations only (WARNING)"
   only_cpu=True
 
 class GPUThreads:
   threads=[]
-  def __init__(self,gpu_name="GTX 295",nbCPUthread=None):
-    print "Initializing GPUThreads object for: ",gpu_name
+  def __init__(self,gpu_name="GTX 295",nbCPUthread=None,verbose=False):
+    self.verbose=verbose
+    if self.verbose: print "Initializing GPUThreads object for: ",gpu_name
     self.gpu_name=gpu_name
     if gpu_name=="CPU" or only_cpu:
       # OSX: nbthread=int(os.popen2("sysctl -n hw.ncpu")[1].read())
@@ -47,7 +49,7 @@ class GPUThreads:
         self.threads[-1].setDaemon(True)
         self.threads[-1].start()
   def __del__(self):
-    print "Deleting GPUThreads object"
+    if self.verbose: print "Deleting GPUThreads object"
     nbthread=len(self)
     for j in xrange(nbthread):
       self.threads[0].join_flag=True
@@ -171,6 +173,63 @@ __global__ void CUDA_fhklo(float *fhkl_real,float *fhkl_imag,
 }
 """%(FHKL_BLOCKSIZE)
 
+mod_fhklo_grazing_str ="""
+__global__ void CUDA_fhklo_grazing(float *fhkl_real,float *fhkl_imag,
+                        const float *vx, const float *vy, const float *vz, const float *vocc,
+                        const long natoms,
+                        const float *vkx,const float *vky,const float *vkzr,const float *vkzi)
+{
+   #define BLOCKSIZE %d
+   #define twopi 6.2831853071795862f
+   const unsigned long ix=threadIdx.x+blockDim.x*blockIdx.x;
+   const float kx=twopi*vkx[ix];
+   const float ky=twopi*vky[ix];
+   const float kzr=twopi*vkzr[ix];
+   const float kzi=twopi*vkzi[ix];
+   float fr=0,fi=0;
+   __shared__ float x[BLOCKSIZE];
+   __shared__ float y[BLOCKSIZE];
+   __shared__ float z[BLOCKSIZE];
+   __shared__ float occ[BLOCKSIZE];
+   long at=0;
+   for (;at<=(natoms-BLOCKSIZE);at+=BLOCKSIZE)
+   {
+      x[threadIdx.x]=vx[at+threadIdx.x];
+      y[threadIdx.x]=vy[at+threadIdx.x];
+      z[threadIdx.x]=vz[at+threadIdx.x];
+      occ[threadIdx.x]=vocc[at+threadIdx.x];
+      __syncthreads();
+      for(unsigned int i=0;i<BLOCKSIZE;i++)
+      {
+         float s,c,atten;
+         __sincosf(kx*x[i] + ky*y[i] + kzr*z[i] , &s,&c);
+         atten=exp(kzi*z[i]);
+         fr +=occ[i]*c*atten;
+         fi +=occ[i]*s*atten;
+      }
+   }
+   /* Take care of remaining atoms */
+   if(threadIdx.x<(natoms-at))
+   {
+      x[threadIdx.x]=vx[at+threadIdx.x];
+      y[threadIdx.x]=vy[at+threadIdx.x];
+      z[threadIdx.x]=vz[at+threadIdx.x];
+      occ[threadIdx.x]=vocc[at+threadIdx.x];
+   }
+   __syncthreads();
+   for(long i=0;i<(natoms-at);i++)
+   {
+      float s,c,atten;
+      __sincosf(kx*x[i] + ky*y[i] + kzr*z[i] , &s,&c);
+      atten=exp(kzi*z[i]);
+      fr +=occ[i]*c*atten;
+      fi +=occ[i]*s*atten;
+   }
+   fhkl_real[ix]+=fr;
+   fhkl_imag[ix]+=fi;
+}
+"""%(FHKL_BLOCKSIZE)
+
 code_CPU_fhkl_xyz="""
   const float PI2         = 6.28318530717958647692528676655900577f;
   for(unsigned long i=0;i<nhkl;i++)
@@ -279,7 +338,7 @@ class GPUThread_Fhkl(threading.Thread):
     ctx = dev.make_context()
     
     # Kernel will be initialized when necessary
-    CUDA_fhkl,CUDA_fhk,CUDA_fhklo,CUDA_fhko=None,None,None,None
+    CUDA_fhkl,CUDA_fhk,CUDA_fhklo,CUDA_fhko,CUDA_fhkl_grazing=None,None,None,None,None
     
     BLOCKSIZE           =dev.get_attribute(drv.device_attribute.WARP_SIZE) # 32
     MULTIPROCESSOR_COUNT=dev.get_attribute(drv.device_attribute.MULTIPROCESSOR_COUNT)
@@ -321,9 +380,9 @@ class GPUThread_Fhkl(threading.Thread):
           if self.occ!=None:
             tmpocc=self.occ[steps_nbatoms[i-1]:steps_nbatoms[i]]
           #if self.verbose: print [steps_nbatoms[i-1],steps_nbatoms[i]]
-          if type(self.occ)==type(None):
+          if type(self.occ)==type(None) and type(self.vkzi)==type(None):
             if CUDA_fhkl==None:
-              #print "Compiling CUDA_fhkl"
+              if self.verbose: print "Compiling CUDA_fhkl"
               mod_fhkl = compiler.SourceModule(mod_fhkl_str, options=["-use_fast_math"])
               CUDA_fhkl = mod_fhkl.get_function("CUDA_fhkl")
             CUDA_fhkl (drv.InOut(self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]]),
@@ -334,9 +393,9 @@ class GPUThread_Fhkl(threading.Thread):
                       drv.In(self.h[steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.k[steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.l[steps_nhkl[j-1]:steps_nhkl[j]]),block=(FHKL_BLOCKSIZE,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//FHKL_BLOCKSIZE,1))
-          else:
+          if type(self.occ)!=type(None) and type(self.vkzi)==type(None):
             if CUDA_fhklo==None:
-              #print "Compiling CUDA_fhklo"
+              if self.verbose: print "Compiling CUDA_fhklo"
               mod_fhklo = compiler.SourceModule(mod_fhklo_str, options=["-use_fast_math"])
               CUDA_fhklo = mod_fhklo.get_function("CUDA_fhklo")
                 
@@ -349,6 +408,40 @@ class GPUThread_Fhkl(threading.Thread):
                       drv.In(self.h[steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.k[steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.l[steps_nhkl[j-1]:steps_nhkl[j]]),block=(FHKL_BLOCKSIZE,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//FHKL_BLOCKSIZE,1))
+          if type(self.occ)!=type(None) and type(self.vkzi)!=type(None):
+            if CUDA_fhkl_grazing==None:
+              if self.verbose:print "Compiling CUDA_fhklo_grazing"
+              mod_fhkl_grazing = compiler.SourceModule(mod_fhklo_grazing_str, options=["-use_fast_math"])
+              CUDA_fhkl_grazing = mod_fhkl_grazing.get_function("CUDA_fhklo_grazing")
+            CUDA_fhkl_grazing (drv.InOut(self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.InOut(self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]]), 
+                      drv.In(tmpx),
+                      drv.In(tmpy),
+                      drv.In(tmpz),
+                      drv.In(tmpocc),
+                      numpy.int32(len(tmpx)),
+                      drv.In(self.h   [steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.In(self.k   [steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.In(self.l   [steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.In(self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]]),block=(FHKL_BLOCKSIZE,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//FHKL_BLOCKSIZE,1))
+          if type(self.occ)==type(None) and type(self.vkzi)!=type(None):
+            #Also use CUDA_fhklo_grazing, just create a temporary occ=1, performance loss is negligeable
+            if CUDA_fhkl_grazing==None:
+              if self.verbose:print "Compiling CUDA_fhklo_grazing"
+              mod_fhkl_grazing = compiler.SourceModule(mod_fhkl_grazing_str, options=["-use_fast_math"])
+              CUDA_fhkl_grazing = mod_fhkl_grazing.get_function("CUDA_fhklo_grazing")
+            
+            CUDA_fhkl_grazing (drv.InOut(self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.InOut(self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]]), 
+                      drv.In(tmpx),
+                      drv.In(tmpy),
+                      drv.In(tmpz),
+                      drv.In(numpy.ones(tmpz.shape).astype(numpy.float32)),
+                      numpy.int32(len(tmpx)),
+                      drv.In(self.h   [steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.In(self.k   [steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.In(self.l   [steps_nhkl[j-1]:steps_nhkl[j]]),
+                      drv.In(self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]]),block=(FHKL_BLOCKSIZE,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//FHKL_BLOCKSIZE,1))
          
         self.dt=time.time()-t0
         self.eventStart.clear()
@@ -356,22 +449,25 @@ class GPUThread_Fhkl(threading.Thread):
     #MRAtS=nhkl*float(natoms)/self.dt/1e6
     ctx.pop()
 
-def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthread=None):
+def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthread=None,kz_imag=None):
    """
-   Compute F(hkl)=SUM_i exp(2j*pi*(h*x_i + k*y_i + l*z_i))
+   Compute          F(hkl)=SUM_i exp(2j*pi*(h*x_i  + k*y_i  + l*z_i))
+   or equivalently: F(k)  =SUM_i exp(2j*pi*(kx*x_i + ky*y_i + kz*z_i))
    
    nbCPUthread can be used only for CPU computing, when no GPU is available. nbCPUthread can
    be set to the number of cores available. Using None (the default) makes the program recognize
    the number of available processors/cores
+   
+   If kz_imag is not equl to None, then it means that the scattering vector k has an imaginary
+   component (absorption), e.g. because of grazing incidence condition.
    """
    global gputhreads
    if gputhreads==None:
-      gputhreads=GPUThreads(gpu_name,nbCPUthread=nbCPUthread)
+      gputhreads=GPUThreads(gpu_name,nbCPUthread=nbCPUthread,verbose=verbose)
    elif gputhreads.gpu_name!=gpu_name:
      # GPU has changed, re-initialize
      gputhreads=None
-     gputhreads=GPUThreads(gpu_name,nbCPUthread=nbCPUthread)
-
+     gputhreads=GPUThreads(gpu_name,nbCPUthread=nbCPUthread,verbose=verbose)
    # Make sure (h,k,l) and (x,y,z) all have the same size,
    # force pseudo-1d to 3D, and change type to float32
    if h.shape==k.shape and h.shape==l.shape and h.dtype==numpy.float32 and k.dtype==numpy.float32 and l.dtype==numpy.float32:
@@ -385,6 +481,15 @@ def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthrea
     vh=vh.reshape(len(vh.flat))
     vk=vk.reshape(len(vh.flat))
     vl=vl.reshape(len(vh.flat))
+
+   if type(kz_imag)!=type(None):
+     if kz_imag.shape==vh.shape and kz_imag.dtype==numpy.float32:
+       vkzi=kz_imag.ravel()
+     else:
+       vkzi=((h+k+l)*0+kz_imag).astype(numpy.float32)
+       vkzi=vkzi.reshape(len(vh.flat))
+   else:
+     vkzi=None
    
    nhkl0  =numpy.int32(len(vh))
    nhkl=nhkl0
@@ -399,6 +504,7 @@ def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthrea
       vh=numpy.resize(vh,nhkl)
       vk=numpy.resize(vk,nhkl)
       vl=numpy.resize(vl,nhkl)
+      vkzi=numpy.resize(vkzi,nhkl)
    
    # Force float32 type
    if x.shape==y.shape and x.shape==z.shape and x.dtype==numpy.float32 and y.dtype==numpy.float32 and z.dtype==numpy.float32:
@@ -431,9 +537,11 @@ def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthrea
       if i==(nbthread-1): a1=natoms
       tmpocc=vocc
       if occ!=None: tmpocc=vocc[a0:a1]
+      gputhreads[i].verbose=verbose
       gputhreads[i].h=vh
       gputhreads[i].k=vk
       gputhreads[i].l=vl
+      gputhreads[i].vkzi=vkzi
       gputhreads[i].x=vx[a0:a1]
       gputhreads[i].y=vy[a0:a1]
       gputhreads[i].z=vz[a0:a1]
