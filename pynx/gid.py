@@ -58,7 +58,9 @@ class Crystal:
     self.cctbx_scatterers=flex.xray_scatterer()
     for s in self.scatt:
       self.cctbx_scatterers.append(xray.scatterer(label=s.label,site=s.site,occupancy=s.occupancy,u=s.u_iso))
-    xray.add_scatterers_ext(unit_cell=self.uc,
+    try:
+      #old cctbx version
+      xray.add_scatterers_ext(unit_cell=self.uc,
                             space_group=self.sg.group(),
                             scatterers=self.cctbx_scatterers,
                             site_symmetry_table=sgtbx.site_symmetry_table(),
@@ -66,7 +68,40 @@ class Crystal:
                             min_distance_sym_equiv=0.5,
                             u_star_tolerance=0,
                             assert_min_distance_sym_equiv=True)
-    
+    except:
+      # cctbx version 2011_04_06_0217
+      print "Whoops, cctbx version 2011"
+      xray.add_scatterers_ext(unit_cell=self.uc,
+                            space_group=self.sg.group(),
+                            scatterers=self.cctbx_scatterers,
+                            site_symmetry_table=sgtbx.site_symmetry_table(),
+                            site_symmetry_table_for_new=sgtbx.site_symmetry_table(),
+                            min_distance_sym_equiv=0.5,
+                            u_star_tolerance=0,
+                            assert_min_distance_sym_equiv=True,
+                            non_unit_occupancy_implies_min_distance_sym_equiv_zero=False)
+      """
+      add_scatterers_ext( (unit_cell)unit_cell, 
+                    (space_group)space_group, 
+                    (xray_scatterer)scatterers, 
+                    (site_symmetry_table)site_symmetry_table, 
+                    (site_symmetry_table)site_symmetry_table_for_new, 
+                    (float)min_distance_sym_equiv, 
+                    (float)u_star_tolerance, 
+                    (bool)assert_min_distance_sym_equiv, 
+                    (bool)non_unit_occupancy_implies_min_distance_sym_equiv_zero
+                    
+      add_scatterers_ext(cctbx::uctbx::unit_cell unit_cell, 
+                   cctbx::sgtbx::space_group space_group, 
+                   scitbx::af::ref<cctbx::xray::scatterer<double, std::string, std::string>, 
+                   scitbx::af::trivial_accessor> scatterers, 
+                   cctbx::sgtbx::site_symmetry_table {lvalue} site_symmetry_table, 
+                   cctbx::sgtbx::site_symmetry_table site_symmetry_table_for_new, 
+                   double min_distance_sym_equiv, 
+                   double u_star_tolerance, 
+                   bool assert_min_distance_sym_equiv, 
+                   bool non_unit_occupancy_implies_min_distance_sym_equiv_zero)
+      """
     cs=crystal.symmetry(self.uc,spacegroup)
     sp=crystal.special_position_settings(cs)
     self.structure=xray.structure(sp,self.cctbx_scatterers)
@@ -210,10 +245,10 @@ def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
     alphaf=scipy.arcsin(l/2/c*wavelength)
 
   # Incident wave
-  w=Wave(alphai,0,1.0,nrj)
+  w=Wave(alphai,e_par,e_perp,nrj)
   dw=DistortedWave(None,substrate,w)
   # Reflected wave after the dot
-  w1=Wave(alphaf,0,1.0,nrj)
+  w1=Wave(alphaf,e_par,e_perp,nrj)
   dw1=DistortedWave(None,substrate,w1)
 
   # First path, direct diffraction
