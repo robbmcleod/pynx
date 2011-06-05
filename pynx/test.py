@@ -188,7 +188,7 @@ def test_dwba5(gpu_name,show_plot=True,verbose=True):
 
   tmp=mgrid[-30:30,-30:30,0:20]*1.02
   x,y,z=tmp[0],tmp[1],tmp[2]
-  tmp=mgrid[-30:30,-30:30,-50:0]
+  tmp=mgrid[-30:30,-30:30,-100:0]
   x=append(x,tmp[0].ravel())
   y=append(y,tmp[1].ravel())
   z=append(z,tmp[2].ravel())
@@ -201,10 +201,11 @@ def test_dwba5(gpu_name,show_plot=True,verbose=True):
   substrate=gid.Crystal((a,a,a,90,90,90),"Fd3m:1",(si,))
   fhkl=gid.FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=alphai,alphaf=alphaf,
               substrate=substrate,wavelength=wavelength,
-              e_par=0.,e_perp=1.0,gpu_name="GTX")
+              e_par=0.,e_perp=1.0,gpu_name="GTX",verbose=verbose)
   if show_plot:
     #plot versus H and alpha_f
     from pylab import imshow,cm,xlabel,ylabel,colorbar,figure
+    figure(1)
     imshow(log10(abs(fhkl)**2),aspect='auto',origin='lower',extent=(h.min(),h.max(),0,alphaf.max()*180/pi), cmap=cm.jet,vmin=7)
     xlabel(r"$H\ (r.l.u.)$",fontsize=18)
     ylabel(r"$\alpha_f\ (^\circ)$",fontsize=18)
@@ -217,7 +218,7 @@ def test_dwba5(gpu_name,show_plot=True,verbose=True):
   s="PASS"
   if abs(fhkl).mean()<1:s="FAIL"
   print "%20s: simple DWBA test, 5 paths, using cctbx for refraction index calculations (no strict check)                                         %10s"%("pynx.gid.FhklDWBA5",s)
-  return abs(fhkl).mean()>1,h,k,l,fhkl
+  return abs(fhkl).mean()>1
 
 
 def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):

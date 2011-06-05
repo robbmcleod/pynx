@@ -207,7 +207,10 @@ class DistortedWave:
     else:
       #use cctbx to determine the reazl and imaginary part of the refraction index
       if material0==None:
-          self.delta,self.beta=material1.GetRefractionIndexDeltaBeta()
+        self.delta,self.beta=material1.GetRefractionIndexDeltaBeta()
+      elif material1==None:
+        self.delta,self.beta=material0.GetRefractionIndexDeltaBeta()
+        self.delta,self.beta=-self.delta,-self.beta
       else:
         delta0,beta0=material0.GetRefractionIndexDeltaBeta()
         delta1,beta1=material1.GetRefractionIndexDeltaBeta()
@@ -301,6 +304,8 @@ def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
 
 def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True,verbose=False):
   """
+  WARNING: this code is still in development, and needs to be checked !
+  
   Calculate the grazing-incidence X-ray scattered intensity taking into account
   5 scattering paths, for a nanostructure object located above a given substrate.
   All atoms with z>0 are assumed to be above the surface, and their
@@ -351,15 +356,17 @@ def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
     
     wi=Wave(alphai,e_par,e_perp,nrj)
     dwi=DistortedWave(None,substrate,wi)
-    # TODO For outgoing beam: check e_par and e_perp
+    # TODO For outgoing beam: check e_par and e_perp, signs for k real and imag...
     wf=Wave(alphaf,e_par,e_perp,nrj)
     dwf=DistortedWave(None,substrate,wf)
     # kz, transmitted
-    kz_real,kz_imag=(dwf.ktz-dwi.ktz).real,(dwf.ktz-dwi.ktz).imag
+    kz_real,kz_imag=(-dwf.ktz-dwi.ktz).real,(dwf.ktz+dwi.ktz).imag
     if verbose:
       print "wi.kz, dwi.ktz:",wi.kz,dwi.ktz
-      print "kz_below mean:",(dwf.ktz-dwi.ktz).mean()
-      print dwf.ktz-dwi.ktz
+      print "kz_below real:",kz_real
+      print "kz_below imag:",kz_imag
+      print "kz_below mean:",kz_real.mean(), kz_imag.mean()
+      #print dwf.ktz-dwi.ktz
     #print dwi.Tiy,dwf.Tiy
     #print kz_real,kz_imag
     # Compute scattering
