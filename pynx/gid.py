@@ -6,17 +6,36 @@
 #       This project was developped at the CEA/INAC/SP2M (Grenoble, France)
 
 import scipy
-from scipy import pi
+from scipy import pi,take
 
-import cctbx
-from cctbx import crystal
-from cctbx import xray
-from cctbx import miller
-from cctbx import uctbx
-from cctbx import sgtbx
-from cctbx.array_family import flex
-from cctbx.eltbx import sasaki
-from cctbx.eltbx import tiny_pse
+def cctbx_version():
+  # Code copied from: cctbx_sources/cctbx/command_line/version.py
+  version = None
+  for tag_file in ["TAG", "cctbx_bundle_TAG"]:
+    tag_path = libtbx.env.under_dist("libtbx", os.path.join("..", tag_file))
+    if (os.path.isfile(tag_path)):
+      try: version = open(tag_path).read().strip()
+      except KeyboardInterrupt: raise
+      except: pass
+      else: break
+  if (version is None):
+    version = libtbx.env.command_version_suffix
+  return version
+
+
+try:
+  import cctbx
+  from cctbx import crystal
+  from cctbx import xray
+  from cctbx import miller
+  from cctbx import uctbx
+  from cctbx import sgtbx
+  from cctbx.array_family import flex
+  from cctbx.eltbx import sasaki
+  from cctbx.eltbx import tiny_pse
+  USE_CCTBX=True
+except:
+  USE_CCTBX=False
 
 #Electron classical radius (Angstroems)
 re=2.814e-15
@@ -69,8 +88,8 @@ class Crystal:
                             u_star_tolerance=0,
                             assert_min_distance_sym_equiv=True)
     except:
-      # cctbx version 2011_04_06_0217
-      print "Whoops, cctbx version 2011"
+      # cctbx version >= 2011_04_06_0217 
+      #print "Whoops, cctbx version 2011"
       xray.add_scatterers_ext(unit_cell=self.uc,
                             space_group=self.sg.group(),
                             scatterers=self.cctbx_scatterers,
@@ -80,28 +99,6 @@ class Crystal:
                             u_star_tolerance=0,
                             assert_min_distance_sym_equiv=True,
                             non_unit_occupancy_implies_min_distance_sym_equiv_zero=False)
-      """
-      add_scatterers_ext( (unit_cell)unit_cell, 
-                    (space_group)space_group, 
-                    (xray_scatterer)scatterers, 
-                    (site_symmetry_table)site_symmetry_table, 
-                    (site_symmetry_table)site_symmetry_table_for_new, 
-                    (float)min_distance_sym_equiv, 
-                    (float)u_star_tolerance, 
-                    (bool)assert_min_distance_sym_equiv, 
-                    (bool)non_unit_occupancy_implies_min_distance_sym_equiv_zero
-                    
-      add_scatterers_ext(cctbx::uctbx::unit_cell unit_cell, 
-                   cctbx::sgtbx::space_group space_group, 
-                   scitbx::af::ref<cctbx::xray::scatterer<double, std::string, std::string>, 
-                   scitbx::af::trivial_accessor> scatterers, 
-                   cctbx::sgtbx::site_symmetry_table {lvalue} site_symmetry_table, 
-                   cctbx::sgtbx::site_symmetry_table site_symmetry_table_for_new, 
-                   double min_distance_sym_equiv, 
-                   double u_star_tolerance, 
-                   bool assert_min_distance_sym_equiv, 
-                   bool non_unit_occupancy_implies_min_distance_sym_equiv_zero)
-      """
     cs=crystal.symmetry(self.uc,spacegroup)
     sp=crystal.special_position_settings(cs)
     self.structure=xray.structure(sp,self.cctbx_scatterers)
@@ -187,12 +184,31 @@ class Wave:
 
 class DistortedWave:
   """
-    Reflected and refracted wave at a surface
+    Reflected and refracted wave at an interface. 
+    
+    This will compute the reflection and refraction coefficients, 
+    as well as the transmitted (complex) wavevector).
+    
+    Calculation can be done by supplying the Wave object, and either:
+    * the materials used as pynx.gid.Crystal objects:
+      - material0: upper (incoming) layer material, can be None (air or vacuum)
+      - material1: lower layer material
+    * the delta, beta values for the difference of the refraction index 
+    between the lower and the upper layer (delta: real part, beta: imaginary part)
+    
+    If delta and beta are supplied, then material0 and material1 are ignored, otherwise
+    the refraction index delta and beta will be calculated using cctbx from
+    material1 and material0.
   """
-  def __init__(self,material0,material1,wave):
-    if material0==None:
-        self.delta,self.beta=material1.GetRefractionIndexDeltaBeta()
+  def __init__(self,material0,material1,wave,delta=None,beta=None):
+    if delta!=None and beta!=None:
+      self.delta=delta
+      self.beta=beta
     else:
+      #use cctbx to determine the reazl and imaginary part of the refraction index
+      if material0==None:
+          self.delta,self.beta=material1.GetRefractionIndexDeltaBeta()
+      else:
         delta0,beta0=material0.GetRefractionIndexDeltaBeta()
         delta1,beta1=material1.GetRefractionIndexDeltaBeta()
         self.delta=delta1-delta0
@@ -224,25 +240,40 @@ class DistortedWave:
     self.Ti2=net2/ne2
     self.Ri2=ner2/ne2
 
-def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU"):
+def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True):
   """
   Calculate the grazing-incidence X-ray scattered intensity taking into account
   4 scattering paths, for a nanostructure object located above a given substrate.
+  The 5th path is the scattering from the substrate, assumed to be below the
+  interface at z=0.
   
   x,y,z: coordinates of the atoms in fractionnal coordinates (relative to the 
-  substrate unit cell)
-  h,k,l: reciprocal space coordinates
+         substrate unit cell)- if use_fractionnal==False, these should be given in Angstroems
+  h,k,l: reciprocal space coordinates. If use_fractionnal==False, these should be given
+         in inverse Angstroems (multiplied by 2pi - physicist 'k' convention, |k|=4pisin(theta)/lambda,
+         i.e. these correspond to k_x,k_y,k_z).
   alphai, alphaf: incident and outgoing angles, in radians
+  substrate: the substrate material, as a pynx.gid.Crystal object - this will be used
+             to calculate the material refraction index.
   wavelength: in Angstroems
   e_par,e_perp: percentage of polarisation parallel and perpendicular to the incident plane
+  use_fractionnal: if True (the default), then coordinates for atoms and reciprocal
+                   space are given relatively to the unit cell, otherwise in Angstroems
+                   and 2pi*inverse Angstroems.
   
   Note: Either l *OR* alphaf must be supplied - it is assumed that the lattice
   coordinates are such that the [001] direction is perpendicular to the surface.
   """
   nrj=W2E(wavelength)
-  c=substrate.uc.parameters()[2]
+  if use_fractionnal: 
+    c=substrate.uc.parameters()[2]
+    s_fact=1.0
+  else: 
+    c=2*pi
+    s_fact=1/c
   if alphaf==None:
-    alphaf=scipy.arcsin(l/2/c*wavelength)
+    # alphaf, computed from l: l.c* = (sin(alpha_f) + sin(alpha_i))/wavelength
+    alphaf=scipy.arcsin(l/c*wavelength-scipy.sin(alphai))
 
   # Incident wave
   w=Wave(alphai,e_par,e_perp,nrj)
@@ -252,18 +283,95 @@ def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
   dw1=DistortedWave(None,substrate,w1)
 
   # First path, direct diffraction
-  l=c*2*scipy.sin(alphaf+alphai)/wavelength
-  f1=gpu.Fhkl_thread(h,k,l,x,y,z,occ=occ,gpu_name=gpu_name)[0]
+  l=c*scipy.sin(alphaf+alphai)/wavelength
+  f1=gpu.Fhkl_thread(h*s_fact,k*s_fact,l*s_fact,x,y,z,occ=occ,gpu_name=gpu_name)[0]
 
   # Second path, reflection before
-  l=c*2*scipy.sin(alphaf-alphai)/wavelength
-  f2=gpu.Fhkl_thread(h,k,l,x,y,z,occ=occ,gpu_name=gpu_name)[0]*dw.Riy
+  l=c*scipy.sin(alphaf-alphai)/wavelength
+  f2=gpu.Fhkl_thread(h*s_fact,k*s_fact,l*s_fact,x,y,z,occ=occ,gpu_name=gpu_name)[0]*dw.Riy
 
   # Third path, reflection after dot
-  l=c*2*scipy.sin(-alphaf+alphai)/wavelength
-  f3=gpu.Fhkl_thread(h,k,l,x,y,z,occ=occ,gpu_name=gpu_name)[0]*dw1.Riy
+  l=c*scipy.sin(-alphaf+alphai)/wavelength
+  f3=gpu.Fhkl_thread(h*s_fact,k*s_fact,l*s_fact,x,y,z,occ=occ,gpu_name=gpu_name)[0]*dw1.Riy
 
   # Fourth path, reflection before and after dot
-  l=c*2*scipy.sin(-alphaf-alphai)/wavelength
-  f4=gpu.Fhkl_thread(h,k,l,x,y,z,occ=occ,gpu_name=gpu_name)[0]*dw.Riy*dw1.Riy
+  l=c*scipy.sin(-alphaf-alphai)/wavelength
+  f4=gpu.Fhkl_thread(h*s_fact,k*s_fact,l*s_fact,x,y,z,occ=occ,gpu_name=gpu_name)[0]*dw.Riy*dw1.Riy
   return f1+f2+f3+f4
+
+def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True,verbose=False):
+  """
+  Calculate the grazing-incidence X-ray scattered intensity taking into account
+  5 scattering paths, for a nanostructure object located above a given substrate.
+  All atoms with z>0 are assumed to be above the surface, and their
+  scattering is computed using the 4 DWBA paths. Atoms with z<=0 are below
+  the surface, and their scattering is computed using a single path,
+  taking into account the refraction and the attenuation length.
+  
+  x,y,z: coordinates of the atoms in fractionnal coordinates (relative to the 
+  substrate unit cell)
+  h,k,l: reciprocal space coordinates
+  alphai, alphaf: incident and outgoing angles, in radians
+  substrate: the substrate material, as a pynx.gid.Crystal object - this will be used
+             to calculate the material refraction index.
+  wavelength: in Angstroems
+  e_par,e_perp: percentage of polarisation parallel and perpendicular to the incident plane
+  
+  Note: Either l *OR* alphaf must be supplied - it is assumed that the lattice
+  coordinates are such that the [001] direction is perpendicular to the surface.
+  """
+  nrj=W2E(wavelength)
+    
+  # Atoms above the surface #
+  tmpx=(x+(z+y)*0).ravel()
+  tmpy=(y+(x+z)*0).ravel()
+  tmpz=(z+(x+y)*0).ravel()
+  idx=scipy.nonzero(tmpz>0)
+  if len(idx[0])>0:
+    if type(occ)!=type(None): tmpocc=take(occ,idx)
+    else: tmpocc=None
+    f1234=FhklDWBA4(take(tmpx,idx),take(tmpy,idx),take(tmpz,idx),h,k,l=l,occ=tmpocc,alphai=alphai,alphaf=alphaf,substrate=substrate,wavelength=wavelength,e_par=e_par,e_perp=e_perp,gpu_name=gpu_name,use_fractionnal=use_fractionnal)
+  else:
+    f1234=0
+  # Atoms below the surface
+  idx=scipy.nonzero(tmpz<=0)  
+  if len(idx[0])>0:
+    if use_fractionnal: 
+      c=substrate.uc.parameters()[2]
+      s_fact=1.0
+    else: 
+      c=2*pi
+      s_fact=1/c
+    if alphaf==None:
+      # alphaf, computed from l and alphai
+      alphaf=scipy.arcsin(l/c*wavelength-scipy.sin(alphai))
+    else:
+      tmpl=(scipy.sin(alphaf)+scipy.sin(alphai))/wavelength
+      if verbose:print "From alphaf: l=%4.2f -> %4.2f"%(tmpl.min(),tmpl.max())
+    
+    wi=Wave(alphai,e_par,e_perp,nrj)
+    dwi=DistortedWave(None,substrate,wi)
+    # TODO For outgoing beam: check e_par and e_perp
+    wf=Wave(alphaf,e_par,e_perp,nrj)
+    dwf=DistortedWave(None,substrate,wf)
+    # kz, transmitted
+    kz_real,kz_imag=(dwf.ktz-dwi.ktz).real,(dwf.ktz-dwi.ktz).imag
+    if verbose:
+      print "wi.kz, dwi.ktz:",wi.kz,dwi.ktz
+      print "kz_below mean:",(dwf.ktz-dwi.ktz).mean()
+      print dwf.ktz-dwi.ktz
+    #print dwi.Tiy,dwf.Tiy
+    #print kz_real,kz_imag
+    # Compute scattering
+    if type(occ)!=type(None): tmpocc=take(occ,idx)
+    else: tmpocc=None
+    if use_fractionnal:
+      l_real=c*kz_real/(2*pi)
+      l_imag=c*kz_imag/(2*pi)
+    else:
+      l_real=kz_real/(2*pi)
+      l_imag=kz_imag/(2*pi)
+    f5=gpu.Fhkl_thread(h*s_fact,k*s_fact,l_real,take(tmpx,idx),take(tmpy,idx),take(tmpz,idx),occ=tmpocc,gpu_name=gpu_name,sz_imag=l_imag)[0]*dwi.Tiy*(-dwf.Tiy)
+  else:
+    f5=0
+  return f1234+f5
