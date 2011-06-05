@@ -428,7 +428,7 @@ class GPUThread_Fhkl(threading.Thread):
             #Also use CUDA_fhklo_grazing, just create a temporary occ=1, performance loss is negligeable
             if CUDA_fhkl_grazing==None:
               if self.verbose:print "Compiling CUDA_fhklo_grazing"
-              mod_fhkl_grazing = compiler.SourceModule(mod_fhkl_grazing_str, options=["-use_fast_math"])
+              mod_fhkl_grazing = compiler.SourceModule(mod_fhklo_grazing_str, options=["-use_fast_math"])
               CUDA_fhkl_grazing = mod_fhkl_grazing.get_function("CUDA_fhklo_grazing")
             
             CUDA_fhkl_grazing (drv.InOut(self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]]),
@@ -449,16 +449,16 @@ class GPUThread_Fhkl(threading.Thread):
     #MRAtS=nhkl*float(natoms)/self.dt/1e6
     ctx.pop()
 
-def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthread=None,kz_imag=None):
+def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthread=None,sz_imag=None):
    """
    Compute          F(hkl)=SUM_i exp(2j*pi*(h*x_i  + k*y_i  + l*z_i))
-   or equivalently: F(k)  =SUM_i exp(2j*pi*(kx*x_i + ky*y_i + kz*z_i))
+   or equivalently: F(k)  =SUM_i exp(2j*pi*(sx*x_i + sy*y_i + sz*z_i))
    
    nbCPUthread can be used only for CPU computing, when no GPU is available. nbCPUthread can
    be set to the number of cores available. Using None (the default) makes the program recognize
    the number of available processors/cores
    
-   If kz_imag is not equl to None, then it means that the scattering vector k has an imaginary
+   If sz_imag is not equal to None, then it means that the scattering vector s has an imaginary
    component (absorption), e.g. because of grazing incidence condition.
    """
    global gputhreads
@@ -482,11 +482,11 @@ def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthrea
     vk=vk.reshape(len(vh.flat))
     vl=vl.reshape(len(vh.flat))
 
-   if type(kz_imag)!=type(None):
-     if kz_imag.shape==vh.shape and kz_imag.dtype==numpy.float32:
-       vkzi=kz_imag.ravel()
+   if type(sz_imag)!=type(None):
+     if sz_imag.shape==vh.shape and sz_imag.dtype==numpy.float32:
+       vkzi=sz_imag.ravel()
      else:
-       vkzi=((h+k+l)*0+kz_imag).astype(numpy.float32)
+       vkzi=((h+k+l)*0+sz_imag).astype(numpy.float32)
        vkzi=vkzi.reshape(len(vh.flat))
    else:
      vkzi=None
