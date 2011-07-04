@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from numpy import arange,sin,exp,pi,newaxis,float32,random,ones
 from pynx import gpu
+import time
 
 def test_fhkl(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   #Create array of 3D coordinates, 50x50x50 cells
@@ -220,6 +221,68 @@ def test_dwba5(gpu_name,show_plot=True,verbose=True):
   print "%20s: simple DWBA test, 5 paths, using cctbx for refraction index calculations (no strict check)                                         %10s"%("pynx.gid.FhklDWBA5",s)
   return abs(fhkl).mean()>1
 
+def mrats(nhkl,natoms,gpu_name="GTX",verbose=False):   
+   h=random.uniform(-8,8,nhkl)
+   k=random.uniform(-8,8,nhkl)
+   l=random.uniform(-8,8,nhkl)
+   
+   x=random.uniform(-8,8,natoms)
+   y=random.uniform(-8,8,natoms)
+   z=random.uniform(-8,8,natoms)
+   
+   if True:
+      # Add a little disorder
+      x=x+0*(y+z)
+      y=y+0*(x+z)
+      z=z+0*(x+y)
+      x+=random.normal(0,.02,size=x.shape)
+      y+=random.normal(0,.02,size=x.shape)
+      z+=random.normal(0,.02,size=x.shape)
+   
+   #fhkl,dt=gpu.Fhkl(h,k,l,x,y,z,verbose=True)
+   fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,verbose=False,gpu_name=gpu_name,nbCPUthread=1)
+   MRAtS=nhkl*float(natoms)/dt/1e6
+   fhkl_gold,dt_gold=None,None
+   if verbose: print "%7d reflections, %8d atoms, dt=%7.5fs , %9.3f MAtoms.reflections/s (%s)"%(nhkl,natoms,dt,MRAtS,gpu_name)
+   
+   return MRAtS
+
+def speed(gpu_name,do_plot=False):
+  """Test F(hkl) speed as a function of the number of atoms and reflections. 
+  """
+  nhkl=100L
+  vnhkl=[]
+  dt0=0
+  d={}
+  while dt0<2 and nhkl<1e7:
+    vnhkl.append(nhkl)
+    vnat=[]
+    vMRAtS=[]
+    iatoms=2
+    natoms=100l
+    dt=0
+    while dt<2:
+        natoms=long(10**iatoms)
+        vnat.append(natoms)
+        t0=time.time()
+        vMRAtS.append(1e6*mrats(nhkl,natoms,gpu_name=gpu_name,verbose=True))
+        dt=time.time()-t0
+        if iatoms==2: dt0=dt
+        iatoms+=0.2
+    d[nhkl]=(vnat,vMRAtS)
+    nhkl*=10
+  if do_plot:
+    from pylab import loglog,text,xlabel,ylabel,xlim,log10
+    for k,v in d.iteritems():
+      loglog(v[0],v[1],'k-o',markersize=3)
+      text(v[0][0]/2.5,v[1][0],"$10^{%1d}$"%(log10(k)),fontsize=18,weight='extra bold',verticalalignment='center')
+
+    text(70,3e9,"$N_{refl}$",fontsize=18,weight='extra bold',horizontalalignment='center',verticalalignment='center')
+    text(1e5,2e9,"$GPU$",fontsize=18,weight='extra bold',horizontalalignment='center',verticalalignment='center')
+
+    ylabel("$reflections\cdot atoms\cdot s^{-1}$",fontsize=18)
+    xlabel("$nb\ atoms$",fontsize=18)
+    xlim(30,1e7)
 
 def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   for i in xrange(gpu.drv.Device.count()):
