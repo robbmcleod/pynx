@@ -179,8 +179,12 @@ def test_dwba4(gpu_name,show_plot=True,verbose=True):
 def test_dwba5(gpu_name,show_plot=True,verbose=True):
   from numpy import mgrid,flatnonzero,take,append,sqrt,linspace,float32,abs,log10
   from scipy.special import erf
-  from pynx import gpu,fthomson,gid
-
+  try:
+    from pynx import gpu,fthomson,gid
+  except:
+    s="FAIL"
+    print "%20s: simple DWBA test, 5 paths, using cctbx                                                                  (MISSING cctbx ?) ===>     %10s"%("pynx.gid.FhklDWBA5",s)
+    return False
   # Simple scattering, small cube above a substrate (larger cube).
   nrj=10000.
   wavelength=12398.4/nrj
@@ -285,12 +289,17 @@ def speed(gpu_name,do_plot=False):
     xlim(30,1e7)
 
 def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
-  for i in xrange(gpu.drv.Device.count()):
-    print "######## PyNX: testing for device: ",gpu.drv.Device(i).name()
-    junk=test_fhkl      (gpu.drv.Device(i).name(),nx,ny,nz,nh,nk,nl,verbose=verbose)
-    junk=test_fhklo     (gpu.drv.Device(i).name(),nx,ny,nz,nh,nk,nl,verbose=verbose)
-    junk=test_fhklo_graz(gpu.drv.Device(i).name(),nx,ny,nz,nh,nk,nl,verbose=verbose)
-    junk=test_fhkl_graz (gpu.drv.Device(i).name(),nx,ny,nz,nh,nk,nl,verbose=verbose)
-    junk=test_dwba5     (gpu.drv.Device(i).name(),show_plot=False,verbose=verbose)
+  if gpu.only_cpu:
+     devlist=['CPU']
+  else:
+    devlist=[]
+    for i in xrange(gpu.drv.Device.count()): devlist.append(gpu.drv.Device(i).name())
+  for d in devlist:
+    print "######## PyNX: testing for device: ",d
+    junk=test_fhkl      (d,nx,ny,nz,nh,nk,nl,verbose=verbose)
+    junk=test_fhklo     (d,nx,ny,nz,nh,nk,nl,verbose=verbose)
+    junk=test_fhklo_graz(d,nx,ny,nz,nh,nk,nl,verbose=verbose)
+    junk=test_fhkl_graz (d,nx,ny,nz,nh,nk,nl,verbose=verbose)
+    junk=test_dwba5   (d,show_plot=False,verbose=verbose)
 
 
