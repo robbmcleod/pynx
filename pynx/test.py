@@ -3,7 +3,7 @@ from numpy import arange,sin,exp,pi,newaxis,float32,random,ones
 from pynx import gpu
 import time
 
-def test_fhkl(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
+def test_fhkl(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
   #Create array of 3D coordinates, 50x50x50 cells
   x=arange(0,nx,dtype=float32)
   y=arange(0,ny,dtype=float32)[:,newaxis]
@@ -13,8 +13,8 @@ def test_fhkl(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   k=random.uniform(.01,.5,nk)[:,newaxis]
   l=random.uniform(2.01,2.5,nl)[:,newaxis,newaxis]
   #The actual computation (done twice - first time to compile kernel)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,verbose=verbose)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,verbose=verbose)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,verbose=verbose,language=language,cl_platform=cl_platform)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,verbose=verbose,language=language,cl_platform=cl_platform)
   #Compare to analytical formula
   fhkl_gold=(exp(1j*pi*h*(nx-1)) * sin(pi*h*nx) / sin(pi*h))  *  (exp(1j*pi*k*(ny-1)) * sin(pi*k*ny) / sin(pi*k))  *  (exp(1j*pi*l*(nz-1)) * sin(pi*l*nz) / sin(pi*l))
   diff=abs(fhkl-fhkl_gold)
@@ -24,7 +24,7 @@ def test_fhkl(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhkl",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
-def test_fhklo(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
+def test_fhklo(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
   #Create array of 3D coordinates, 50x50x50 cells
   x=arange(0,nx,dtype=float32)
   y=arange(0,ny,dtype=float32)[:,newaxis]
@@ -35,8 +35,8 @@ def test_fhklo(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   k=random.uniform(.01,.5,nk)[:,newaxis]
   l=random.uniform(2.01,2.5,nl)[:,newaxis,newaxis]
   #The actual computation (done twice - first time to compile kernel)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,verbose=verbose)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,verbose=verbose)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,verbose=verbose,language=language,cl_platform=cl_platform)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,verbose=verbose,language=language,cl_platform=cl_platform)
   #Compare to analytical formula
   fhkl_gold=occ.mean()*(exp(1j*pi*h*(nx-1)) * sin(pi*h*nx) / sin(pi*h))  *  (exp(1j*pi*k*(ny-1)) * sin(pi*k*ny) / sin(pi*k))  *  (exp(1j*pi*l*(nz-1)) * sin(pi*l*nz) / sin(pi*l))
   diff=abs(fhkl-fhkl_gold)
@@ -46,7 +46,7 @@ def test_fhklo(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhklo",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
-def test_fhklo_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
+def test_fhklo_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
   #Create array of 3D coordinates, 50x50x50 cells
   x=arange(0,nx,dtype=float32)
   y=arange(0,ny,dtype=float32)[:,newaxis]
@@ -58,8 +58,8 @@ def test_fhklo_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   l=random.uniform(2.01,2.5,nl)[:,newaxis,newaxis]
   sz_imag=ones(l.shape)*0.01
   #The actual computation (done twice - first time to compile kernel)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose,language=language,cl_platform=cl_platform)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,occ,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose,language=language,cl_platform=cl_platform)
   #Compare to analytical formula
   fhkl_gold=occ.mean()*(exp(1j*pi*h*(nx-1)) * sin(pi*h*nx) / sin(pi*h))  *  (exp(1j*pi*k*(ny-1)) * sin(pi*k*ny) / sin(pi*k))  *  ( exp(-2*pi*(1j*l+sz_imag)*nz)-1 ) / ( exp(-2*pi*(1j*l+sz_imag))-1 )
   diff=abs(fhkl-fhkl_gold)
@@ -69,7 +69,7 @@ def test_fhklo_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhklo_graz",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
-def test_fhkl_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
+def test_fhkl_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
   #Create array of 3D coordinates, 50x50x50 cells
   x=arange(0,nx,dtype=float32)
   y=arange(0,ny,dtype=float32)[:,newaxis]
@@ -80,8 +80,8 @@ def test_fhkl_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   l=random.uniform(2.01,2.5,nl)[:,newaxis,newaxis]
   sz_imag=ones(l.shape)*0.01
   #The actual computation (done twice - first time to compile kernel)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose)
-  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose,language=language,cl_platform=cl_platform)
+  fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,gpu_name=gpu_name,sz_imag=sz_imag,verbose=verbose,language=language,cl_platform=cl_platform)
   #Compare to analytical formula
   fhkl_gold=(exp(1j*pi*h*(nx-1)) * sin(pi*h*nx) / sin(pi*h))  *  (exp(1j*pi*k*(ny-1)) * sin(pi*k*ny) / sin(pi*k))  *  ( exp(-2*pi*(1j*l+sz_imag)*nz)-1 ) / ( exp(-2*pi*(1j*l+sz_imag))-1 )
   diff=abs(fhkl-fhkl_gold)
@@ -91,7 +91,7 @@ def test_fhkl_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhkl_graz",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
-def test_dwba4(gpu_name,show_plot=True,verbose=True):
+def test_dwba4(gpu_name,show_plot=True,verbose=True,language="OpenCL",cl_platform=""):
   from numpy import mgrid,flatnonzero,take,append,sqrt,linspace,float32,abs
   from scipy.special import erf
   from pynx import gpu,fthomson,gid
@@ -153,11 +153,11 @@ def test_dwba4(gpu_name,show_plot=True,verbose=True):
 
   fhklge=gid.FhklDWBA4(x+ux,y+uy,z,h,k,l=None,occ=occ,alphai=alphai,alphaf=alphaf,
               substrate=substrate,wavelength=wavelength,
-              e_par=0.,e_perp=1.0,gpu_name="GTX")
+              e_par=0.,e_perp=1.0,gpu_name="GTX",language=language,cl_platform=cl_platform)
 
   fhklsi=gid.FhklDWBA4(x+ux,y+uy,z,h,k,l=None,occ=1-occ,alphai=alphai,alphaf=alphaf,
               substrate=substrate,wavelength=wavelength,
-              e_par=1.,e_perp=0.,gpu_name="GTX")
+              e_par=1.,e_perp=0.,gpu_name="GTX",language=language,cl_platform=cl_platform)
 
   #Scattering factors
   s=a/sqrt(h**2+k**2+l**2) 
@@ -174,9 +174,12 @@ def test_dwba4(gpu_name,show_plot=True,verbose=True):
     ylabel(r"$\alpha_f\ (^\circ)$",fontsize=18)
     colorbar()
   
+  s="PASS"
+  if abs(fhkl).mean()<1:s="FAIL"
+  print "%20s: simple DWBA test, 4 paths, using cctbx for refraction index calculations (no strict check)                                         %10s"%("pynx.gid.FhklDWBA4",s)
   return abs(fhkl).mean()>1
 
-def test_dwba5(gpu_name,show_plot=True,verbose=True):
+def test_dwba5(gpu_name,show_plot=True,verbose=True,language="OpenCL",cl_platform=""):
   from numpy import mgrid,flatnonzero,take,append,sqrt,linspace,float32,abs,log10
   from scipy.special import erf
   try:
@@ -206,7 +209,7 @@ def test_dwba5(gpu_name,show_plot=True,verbose=True):
   substrate=gid.Crystal((a,a,a,90,90,90),"Fd3m:1",(si,))
   fhkl=gid.FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=alphai,alphaf=alphaf,
               substrate=substrate,wavelength=wavelength,
-              e_par=0.,e_perp=1.0,gpu_name="GTX",verbose=verbose)
+              e_par=0.,e_perp=1.0,gpu_name="GTX",verbose=verbose,language=language,cl_platform=cl_platform)
   if show_plot:
     #plot versus H and alpha_f
     from pylab import imshow,cm,xlabel,ylabel,colorbar,figure
@@ -225,7 +228,7 @@ def test_dwba5(gpu_name,show_plot=True,verbose=True):
   print "%20s: simple DWBA test, 5 paths, using cctbx for refraction index calculations (no strict check)                                         %10s"%("pynx.gid.FhklDWBA5",s)
   return abs(fhkl).mean()>1
 
-def mrats(nhkl,natoms,gpu_name="GTX",verbose=False):   
+def mrats(nhkl,natoms,gpu_name="GTX",verbose=False,language="OpenCL",cl_platform=""):   
    h=random.uniform(-8,8,nhkl)
    k=random.uniform(-8,8,nhkl)
    l=random.uniform(-8,8,nhkl)
@@ -244,14 +247,14 @@ def mrats(nhkl,natoms,gpu_name="GTX",verbose=False):
       z+=random.normal(0,.02,size=x.shape)
    
    #fhkl,dt=gpu.Fhkl(h,k,l,x,y,z,verbose=True)
-   fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,verbose=False,gpu_name=gpu_name,nbCPUthread=1)
+   fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,verbose=False,gpu_name=gpu_name,nbCPUthread=None,language=language,cl_platform=cl_platform)
    MRAtS=nhkl*float(natoms)/dt/1e6
    fhkl_gold,dt_gold=None,None
    if verbose: print "%7d reflections, %8d atoms, dt=%7.5fs , %9.3f MAtoms.reflections/s (%s)"%(nhkl,natoms,dt,MRAtS,gpu_name)
    
    return MRAtS
 
-def speed(gpu_name,do_plot=False):
+def speed(gpu_name,do_plot=False,language="OpenCL",cl_platform=""):
   """Test F(hkl) speed as a function of the number of atoms and reflections. 
   """
   nhkl=100L
@@ -269,7 +272,7 @@ def speed(gpu_name,do_plot=False):
         natoms=long(10**iatoms)
         vnat.append(natoms)
         t0=time.time()
-        vMRAtS.append(1e6*mrats(nhkl,natoms,gpu_name=gpu_name,verbose=True))
+        vMRAtS.append(1e6*mrats(nhkl,natoms,gpu_name=gpu_name,verbose=True,language=language,cl_platform=cl_platform))
         dt=time.time()-t0
         if iatoms==2: dt0=dt
         iatoms+=0.2
