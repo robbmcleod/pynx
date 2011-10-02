@@ -279,17 +279,18 @@ def speed(gpu_name,do_plot=False,language="OpenCL",cl_platform=""):
     d[nhkl]=(vnat,vMRAtS)
     nhkl*=10
   if do_plot:
-    from pylab import loglog,text,xlabel,ylabel,xlim,log10
+    from pylab import loglog,text,xlabel,ylabel,xlim,log10,show
     for k,v in d.iteritems():
       loglog(v[0],v[1],'k-o',markersize=3)
-      text(v[0][0]/2.5,v[1][0],"$10^{%1d}$"%(log10(k)),fontsize=18,weight='extra bold',verticalalignment='center')
+      text(v[0][0]/2.5,v[1][0],"$10^{%1d}$"%(log10(k)),fontsize=18,weight='bold',verticalalignment='center')
 
-    text(70,3e9,"$N_{refl}$",fontsize=18,weight='extra bold',horizontalalignment='center',verticalalignment='center')
-    text(1e5,2e9,"$GPU$",fontsize=18,weight='extra bold',horizontalalignment='center',verticalalignment='center')
+    text(70,3e9,"$N_{refl}$",fontsize=18,weight='bold',horizontalalignment='center',verticalalignment='center')
+    text(1e5,2e9,"$GPU$",fontsize=18,weight='bold',horizontalalignment='center',verticalalignment='center')
 
     ylabel("$reflections\cdot atoms\cdot s^{-1}$",fontsize=18)
     xlabel("$nb\ atoms$",fontsize=18)
     xlim(30,1e7)
+    show()
 
 def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
   if gpu.only_cpu:
