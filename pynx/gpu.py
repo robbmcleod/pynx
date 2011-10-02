@@ -12,13 +12,16 @@ import threading
 #import multiprocessing
 from scipy import weave
 
+only_cpu=True
 try:
   import pyopencl as cl
+  only_cpu=False
 except:pass
 
 try:
   import pycuda.driver as drv
   import pycuda.compiler as compiler
+  only_cpu=False
 except:pass
 
 
