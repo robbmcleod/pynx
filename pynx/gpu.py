@@ -16,26 +16,28 @@ only_cpu=True
 try:
   import pyopencl as cl
   only_cpu=False
-except:pass
+except:
+  cl=None
 
 try:
   import pycuda.driver as drv
   import pycuda.compiler as compiler
   only_cpu=False
-except:pass
+except:
+  drv=None
 
 
 class GPUThreads:
   threads=[]
-  def __init__(self,gpu_name="GTX 295",language="OpenCL",cl_platform="",nbCPUthread=None,verbose=False):
-    self.verbose=True
-    if self.verbose: print "Initializing GPUThreads object for: "+gpu_name+" (language="+language+","+cl_platform+")"
+  def __init__(self,gpu_name="GTX 295",language="",cl_platform="",nbCPUthread=None,verbose=False):
+    self.verbose=verbose
     self.gpu_name=gpu_name
     self.language=language
     self.cl_platform=cl_platform
     self.cl_devices=[]
     self.cuda_devices=[]
-    if language.lower()=="opencl":
+    self.gpu_name_platform_real=""
+    if language.lower()=="opencl" or language=="":
       try:
         tmp=[]
         for p in cl.get_platforms():
@@ -49,9 +51,11 @@ class GPUThreads:
           self.threads.append(OpenCLThread_Fhkl(self.cl_devices[i],verbose=verbose))
           self.threads[-1].setDaemon(True)
           self.threads[-1].start()
+        self.gpu_name_platform_real="OpenCL (%s):%s"%(self.cl_devices[0].platform.name,self.cl_devices[0].name)
       except:
-        print "PyNX: Failed importing PyOpenCL, or no platform/graphics card (paltform="+cl_platform+", gpu_name="+gpu_name+") found => using CPU calculations only (WARNING)"
-    elif language.lower()=="cuda":
+        if language.lower()=="opencl":
+          print "PyNX: Failed importing PyOpenCL, or no platform/graphics card (paltform="+cl_platform+", gpu_name="+gpu_name+") found => using CPU calculations only (WARNING)"
+    if language.lower()=="cuda" or (language=="" and len(self.cl_devices)==0):
       try:
         drv.init()
         cuda_devices=[]
@@ -63,19 +67,24 @@ class GPUThreads:
           self.threads.append(CUDAThread_Fhkl(self.cuda_devices[i],verbose=verbose))
           self.threads[-1].setDaemon(True)
           self.threads[-1].start()
+        self.gpu_name_platform_real="CUDA:%s"%(drv.Device(self.cuda_devices[0]).name())
       except:
-        print "PyNX: Failed importing PyCUDA, or no graphics card (gpu_name="+gpu_name+") found => using CPU calculations only (WARNING)"
+        if language.lower()=="cuda":
+          print "PyNX: Failed importing PyCUDA, or no graphics card (gpu_name="+gpu_name+") found => using CPU calculations only (WARNING)"
     
     if len(self.cuda_devices)==0 and len(self.cl_devices)==0:
       # OSX: nbthread=int(os.popen2("sysctl -n hw.ncpu")[1].read())
       # Win: nbthread=int(os.environ["NUMBER_OF_PROCESSORS"])
       # Linux, also:nbthread=os.sysconf("SC_NPROCESSORS_CONF")
+      self.gpu_name_platform_real="CPU (C++/SSE)"
       if nbCPUthread==None: nbthread=os.sysconf("SC_NPROCESSORS_ONLN")
       else: nbthread=nbCPUthread
       for i in xrange(nbthread):
         self.threads.append(CPUThread_Fhkl(verbose=verbose))
         self.threads[-1].setDaemon(True)
         self.threads[-1].start()
+    if self.verbose: 
+      print "Initialized PyNX threads for: "+self.gpu_name+" (language="+self.language+","+self.cl_platform+"), REAL="+self.gpu_name_platform_real
   def __del__(self):
     if self.verbose: print "Deleting GPUThreads object"
     nbthread=len(self)
@@ -131,10 +140,10 @@ __global__ void CUDA_fhkl(float *fhkl_real,float *fhkl_imag,
          fr +=c;
          fi +=s;
       }
+      __syncthreads();
    }
    
    /* Take care of remaining atoms */
-   __syncthreads();
    if(threadIdx.x<(natoms-at))
    {
       x[threadIdx.x]=vx[at+threadIdx.x];
@@ -188,9 +197,9 @@ __global__ void CUDA_fhklo(float *fhkl_real,float *fhkl_imag,
          fr +=occ[i]*c;
          fi +=occ[i]*s;
       }
+      __syncthreads();
    }
    /* Take care of remaining atoms */
-   __syncthreads();
    if(threadIdx.x<(natoms-at))
    {
       x[threadIdx.x]=vx[at+threadIdx.x];
@@ -246,9 +255,9 @@ __global__ void CUDA_fhklo_grazing(float *fhkl_real,float *fhkl_imag,
          fr +=occ[i]*c*atten;
          fi +=occ[i]*s*atten;
       }
+      __syncthreads();
    }
    /* Take care of remaining atoms */
-   __syncthreads();
    if(threadIdx.x<(natoms-at))
    {
       x[threadIdx.x]=vx[at+threadIdx.x];
@@ -363,6 +372,7 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          fi +=sin(tmp);
          fr +=cos(tmp);
       }
+      barrier(CLK_LOCAL_MEM_FENCE);
    }
    /* Take care of remaining atoms */
    if(tx<(natoms-at))
@@ -428,6 +438,7 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          fi +=occ[i]*sin(tmp);
          fr +=occ[i]*cos(tmp);
       }
+      barrier(CLK_LOCAL_MEM_FENCE);
    }
    /* Take care of remaining atoms */
    if(tx<(natoms-at))
@@ -494,6 +505,7 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          fi +=sin(tmp)*atten;
          fr +=cos(tmp)*atten;
       }
+      barrier(CLK_LOCAL_MEM_FENCE);
    }
    /* Take care of remaining atoms */
    if(tx<(natoms-at))
@@ -562,6 +574,7 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          fi +=occ[i]*sin(tmp)*atten;
          fr +=occ[i]*cos(tmp)*atten;
       }
+      barrier(CLK_LOCAL_MEM_FENCE);
    }
    /* Take care of remaining atoms */
    if(tx<(natoms-at))
