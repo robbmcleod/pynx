@@ -73,11 +73,12 @@ class GPUThreads:
           print "PyNX: Failed importing PyCUDA, or no graphics card (gpu_name="+gpu_name+") found => using CPU calculations only (WARNING)"
     
     if len(self.cuda_devices)==0 and len(self.cl_devices)==0:
-      # OSX: nbthread=int(os.popen2("sysctl -n hw.ncpu")[1].read())
-      # Win: nbthread=int(os.environ["NUMBER_OF_PROCESSORS"])
-      # Linux, also:nbthread=os.sysconf("SC_NPROCESSORS_CONF")
       self.gpu_name_platform_real="CPU (C++/SSE)"
-      if nbCPUthread==None: nbthread=os.sysconf("SC_NPROCESSORS_ONLN")
+      if nbCPUthread==None: 
+        try:# OSX & Linux
+          nbthread=os.sysconf("SC_NPROCESSORS_ONLN")
+        except:# For windows
+          nbthread=int(os.environ["NUMBER_OF_PROCESSORS"])
       else: nbthread=nbCPUthread
       for i in xrange(nbthread):
         self.threads.append(CPUThread_Fhkl(verbose=verbose))
@@ -369,8 +370,8 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          // in CUDA arch, the sin and cos will actually be computed
          // together (http://forums.nvidia.com/index.php?s=ea1305aede92c332301f1d0fe6a53237&showtopic=30069&view=findpost&p=169542)
          const float tmp=h*x[i] + k*y[i] + l*z[i];
-         fi +=sin(tmp);
-         fr +=cos(tmp);
+         fi +=native_sin(tmp);
+         fr +=native_cos(tmp);
       }
       barrier(CLK_LOCAL_MEM_FENCE);
    }
@@ -385,8 +386,8 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
    for(long i=0;i<(natoms-at);i++)
    {
       const float tmp=h*x[i] + k*y[i] + l*z[i];
-      fi +=sin(tmp);
-      fr +=cos(tmp);
+      fi +=native_sin(tmp);
+      fr +=native_cos(tmp);
    }
 
    fhkl_real[ix]=fr;
@@ -435,8 +436,8 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          // in CUDA arch, the sin and cos will actually be computed
          // together (http://forums.nvidia.com/index.php?s=ea1305aede92c332301f1d0fe6a53237&showtopic=30069&view=findpost&p=169542)
          const float tmp=h*x[i] + k*y[i] + l*z[i];
-         fi +=occ[i]*sin(tmp);
-         fr +=occ[i]*cos(tmp);
+         fi +=occ[i]*native_sin(tmp);
+         fr +=occ[i]*native_cos(tmp);
       }
       barrier(CLK_LOCAL_MEM_FENCE);
    }
@@ -451,8 +452,8 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
    for(long i=0;i<(natoms-at);i++)
    {
       const float tmp=h*x[i] + k*y[i] + l*z[i];
-      fi +=occ[i]*sin(tmp);
-      fr +=occ[i]*cos(tmp);
+      fi +=occ[i]*native_sin(tmp);
+      fr +=occ[i]*native_cos(tmp);
    }
 
    fhkl_real[ix]=fr;
@@ -502,8 +503,8 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          // together (http://forums.nvidia.com/index.php?s=ea1305aede92c332301f1d0fe6a53237&showtopic=30069&view=findpost&p=169542)
          const float tmp=kx*x[i] + ky*y[i] + kzr*z[i];
          const float atten=exp(kzi*z[i]);
-         fi +=sin(tmp)*atten;
-         fr +=cos(tmp)*atten;
+         fi +=native_sin(tmp)*atten;
+         fr +=native_cos(tmp)*atten;
       }
       barrier(CLK_LOCAL_MEM_FENCE);
    }
@@ -519,8 +520,8 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
    {
       const float tmp=kx*x[i] + ky*y[i] + kzr*z[i];
       const float atten=exp(kzi*z[i]);
-      fi +=sin(tmp)*atten;
-      fr +=cos(tmp)*atten;
+      fi +=native_sin(tmp)*atten;
+      fr +=native_cos(tmp)*atten;
    }
 
    fhkl_real[ix]=fr;
@@ -571,8 +572,8 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
          // together (http://forums.nvidia.com/index.php?s=ea1305aede92c332301f1d0fe6a53237&showtopic=30069&view=findpost&p=169542)
          const float tmp=kx*x[i] + ky*y[i] + kzr*z[i];
          const float atten=exp(kzi*z[i]);
-         fi +=occ[i]*sin(tmp)*atten;
-         fr +=occ[i]*cos(tmp)*atten;
+         fi +=occ[i]*native_sin(tmp)*atten;
+         fr +=occ[i]*native_cos(tmp)*atten;
       }
       barrier(CLK_LOCAL_MEM_FENCE);
    }
@@ -588,8 +589,8 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
    {
       const float tmp=kx*x[i] + ky*y[i] + kzr*z[i];
       const float atten=exp(kzi*z[i]);
-      fi +=occ[i]*sin(tmp)*atten;
-      fr +=occ[i]*cos(tmp)*atten;
+      fi +=occ[i]*native_sin(tmp)*atten;
+      fr +=occ[i]*native_cos(tmp)*atten;
    }
 
    fhkl_real[ix]=fr;
@@ -795,6 +796,7 @@ class OpenCLThread_Fhkl(threading.Thread):
     self.eventStart=threading.Event()
     self.eventFinished=threading.Event()
     self.join_flag=False
+    self.bug_apple_cpu_workgroupsize_warning=True
   def run(self):
     ctx = cl.Context([self.dev])
     queue = cl.CommandQueue(ctx)
@@ -805,6 +807,12 @@ class OpenCLThread_Fhkl(threading.Thread):
     self.block_size=128 #good default for NVidia/AMD cards ?
     if self.dev.max_work_group_size<self.block_size:
       self.block_size=self.dev.max_work_group_size
+    
+    if self.dev.platform.name=="Apple" and self.dev.name.find("CPU")>0:
+      if self.bug_apple_cpu_workgroupsize_warning:
+        print "WARNING: workaround Apple OpenCL CPU bug: forcing group size=1"
+        self.bug_apple_cpu_workgroupsize_warning=False
+      self.block_size=1
     MULTIPROCESSOR_COUNT=self.dev.max_compute_units
     if self.verbose: print self.name," ...beginning"
     
@@ -863,7 +871,8 @@ class OpenCLThread_Fhkl(threading.Thread):
 
             fhkl_real_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             fhkl_imag_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            CL_fhkl.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_)
+            #print (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1)
+            CL_fhkl.Fhkl(queue, ((steps_nhkl[j]-steps_nhkl[j-1], 1)),(self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_)
             cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
             cl.enqueue_copy(queue, self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_imag_).wait()
             
