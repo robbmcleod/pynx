@@ -243,7 +243,7 @@ class DistortedWave:
     self.Ti2=net2/ne2
     self.Ri2=ner2/ne2
 
-def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True,language="OpenCL",cl_platform=""):
+def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True,language="OpenCL",cl_platform="",separate_paths=False):
   """
   Calculate the grazing-incidence X-ray scattered intensity taking into account
   4 scattering paths, for a nanostructure object located above a given substrate.
@@ -300,9 +300,10 @@ def FhklDWBA4(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
   # Fourth path, reflection before and after dot
   l=c*scipy.sin(-alphaf-alphai)/wavelength
   f4=gpu.Fhkl_thread(h*s_fact,k*s_fact,l*s_fact,x,y,z,occ=occ,gpu_name=gpu_name,language=language,cl_platform=cl_platform)[0]*dw.Riy*dw1.Riy
+  if separate_paths: return f1,f2,f3,f4
   return f1+f2+f3+f4
 
-def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True,verbose=False,language="OpenCL",cl_platform=""):
+def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wavelength=1.0,e_par=0.,e_perp=1.0,gpu_name="CPU",use_fractionnal=True,verbose=False,language="OpenCL",cl_platform="",separate_paths=False):
   """
   WARNING: this code is still in development, and needs to be checked !
   
@@ -335,7 +336,7 @@ def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
   if len(idx[0])>0:
     if type(occ)!=type(None): tmpocc=take(occ,idx)
     else: tmpocc=None
-    f1234=FhklDWBA4(take(tmpx,idx),take(tmpy,idx),take(tmpz,idx),h,k,l=l,occ=tmpocc,alphai=alphai,alphaf=alphaf,substrate=substrate,wavelength=wavelength,e_par=e_par,e_perp=e_perp,gpu_name=gpu_name,use_fractionnal=use_fractionnal,language=language,cl_platform=cl_platform)
+    f1234=FhklDWBA4(take(tmpx,idx),take(tmpy,idx),take(tmpz,idx),h,k,l=l,occ=tmpocc,alphai=alphai,alphaf=alphaf,substrate=substrate,wavelength=wavelength,e_par=e_par,e_perp=e_perp,gpu_name=gpu_name,use_fractionnal=use_fractionnal,language=language,cl_platform=cl_platform,separate_paths=separate_paths)
   else:
     f1234=0
   # Atoms below the surface
@@ -381,4 +382,5 @@ def FhklDWBA5(x,y,z,h,k,l=None,occ=None,alphai=0.2,alphaf=None,substrate=None,wa
     f5=gpu.Fhkl_thread(h*s_fact,k*s_fact,l_real,take(tmpx,idx),take(tmpy,idx),take(tmpz,idx),occ=tmpocc,gpu_name=gpu_name,sz_imag=l_imag,language=language,cl_platform=cl_platform)[0]*dwi.Tiy*(-dwf.Tiy)
   else:
     f5=0
+  if separate_paths: return f1234[0],f1234[1],f1234[2],f1234[3],f5
   return f1234+f5
