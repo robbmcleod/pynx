@@ -847,7 +847,7 @@ class OpenCLThread_Fhkl(threading.Thread):
       steps_nhkl=range(0,nhkl,65535*self.block_size)
       if steps_nhkl[-1]!=nhkl: steps_nhkl.append(nhkl)
       
-      print "Atom ranges:",steps_nbatoms
+      if self.verbose: print "Atom ranges:",steps_nbatoms
       for j in xrange(1,len(steps_nhkl)):# not always optimal, separate in equal sizes would be better
         for i in xrange(1,len(steps_nbatoms)):# not always optimal, separate in equal sizes would be better
           tmpx=self.x[steps_nbatoms[i-1]:steps_nbatoms[i]]
