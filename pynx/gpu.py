@@ -390,8 +390,8 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
       fr +=native_cos(tmp);
    }
 
-   fhkl_real[ix]=fr;
-   fhkl_imag[ix]=fi;
+   fhkl_real[ix]+=fr;
+   fhkl_imag[ix]+=fi;
 }"""
 
 CL_FHKLO_CODE="""
@@ -456,8 +456,8 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
       fr +=occ[i]*native_cos(tmp);
    }
 
-   fhkl_real[ix]=fr;
-   fhkl_imag[ix]=fi;
+   fhkl_real[ix]+=fr;
+   fhkl_imag[ix]+=fi;
 }"""
 
 CL_FHKL_grazing_CODE="""
@@ -524,8 +524,8 @@ void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
       fr +=native_cos(tmp)*atten;
    }
 
-   fhkl_real[ix]=fr;
-   fhkl_imag[ix]=fi;
+   fhkl_real[ix]+=fr;
+   fhkl_imag[ix]+=fi;
 }"""
 
 CL_FHKLO_grazing_CODE="""
@@ -593,8 +593,8 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
       fr +=occ[i]*native_cos(tmp)*atten;
    }
 
-   fhkl_real[ix]=fr;
-   fhkl_imag[ix]=fi;
+   fhkl_real[ix]+=fr;
+   fhkl_imag[ix]+=fi;
 }"""
 
 # "Fast" (SSE-optimized) calculation using CPU -requires sse_mathfun.h
@@ -847,7 +847,7 @@ class OpenCLThread_Fhkl(threading.Thread):
       steps_nhkl=range(0,nhkl,65535*self.block_size)
       if steps_nhkl[-1]!=nhkl: steps_nhkl.append(nhkl)
       
-      #if self.verbose: print "Atom ranges:",steps_nbatoms
+      print "Atom ranges:",steps_nbatoms
       for j in xrange(1,len(steps_nhkl)):# not always optimal, separate in equal sizes would be better
         for i in xrange(1,len(steps_nbatoms)):# not always optimal, separate in equal sizes would be better
           tmpx=self.x[steps_nbatoms[i-1]:steps_nbatoms[i]]
@@ -869,8 +869,9 @@ class OpenCLThread_Fhkl(threading.Thread):
             y_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy, size=tmpy.nbytes)
             z_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz, size=tmpz.nbytes)
 
-            fhkl_real_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            
             #print (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1)
             CL_fhkl.Fhkl(queue, ((steps_nhkl[j]-steps_nhkl[j-1], 1)),(self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_)
             cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
@@ -889,8 +890,8 @@ class OpenCLThread_Fhkl(threading.Thread):
             z_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz  , size=tmpz.nbytes)
             occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=tmpz.nbytes)
 
-            fhkl_real_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             
             CL_fhklo.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_)
             cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
@@ -910,8 +911,8 @@ class OpenCLThread_Fhkl(threading.Thread):
             z_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz  , size=tmpz.nbytes)
             occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=tmpocc.nbytes)
 
-            fhkl_real_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             
             CL_fhklo_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_)
             cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
@@ -930,8 +931,8 @@ class OpenCLThread_Fhkl(threading.Thread):
             y_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy, size=tmpy.nbytes)
             z_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz, size=tmpz.nbytes)
 
-            fhkl_real_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.WRITE_ONLY, size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
+            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             
             CL_fhkl_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_)
             cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
