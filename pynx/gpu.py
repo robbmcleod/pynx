@@ -804,7 +804,7 @@ class OpenCLThread_Fhkl(threading.Thread):
     # Kernel program will be initialized when necessary
     CL_fhkl,CL_fhklo,CL_fhkl_grazing,CL_fhklo_grazing=None,None,None,None
     
-    self.block_size=128 #good default for NVidia/AMD cards ?
+    self.block_size=64 #good default for NVidia/AMD cards ? 128 leads to random 'out of resources' error (CUDA, GTX 295)
     if self.dev.max_work_group_size<self.block_size:
       self.block_size=self.dev.max_work_group_size
     
@@ -849,6 +849,11 @@ class OpenCLThread_Fhkl(threading.Thread):
       
       if self.verbose: print "Atom ranges:",steps_nbatoms
       for j in xrange(1,len(steps_nhkl)):# not always optimal, separate in equal sizes would be better
+        fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=0)
+        fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=0)
+        h_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.h[steps_nhkl[j-1]:steps_nhkl[j]], size=0)
+        k_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.k[steps_nhkl[j-1]:steps_nhkl[j]], size=0)
+        l_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.l[steps_nhkl[j-1]:steps_nhkl[j]], size=0)
         for i in xrange(1,len(steps_nbatoms)):# not always optimal, separate in equal sizes would be better
           tmpx=self.x[steps_nbatoms[i-1]:steps_nbatoms[i]]
           tmpy=self.y[steps_nbatoms[i-1]:steps_nbatoms[i]]
@@ -856,91 +861,51 @@ class OpenCLThread_Fhkl(threading.Thread):
           tmpocc=None
           if self.occ!=None:
             tmpocc=self.occ[steps_nbatoms[i-1]:steps_nbatoms[i]]
+
+          x_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpx, size=0)
+          y_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy, size=0)
+          z_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz, size=0)
           #if self.verbose: print [steps_nbatoms[i-1],steps_nbatoms[i]]
           if type(self.occ)==type(None) and type(self.vkzi)==type(None):
             if CL_fhkl==None:
               if self.verbose: print "Compiling CL_fhkl (block size=%d)"%self.block_size
               CL_fhkl = cl.Program(ctx, CL_FHKL_CODE % kernel_params,).build(options=options)
-            h_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.h[steps_nhkl[j-1]:steps_nhkl[j]], size=self.h[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            k_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.k[steps_nhkl[j-1]:steps_nhkl[j]], size=self.k[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            l_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.l[steps_nhkl[j-1]:steps_nhkl[j]], size=self.l[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-
-            x_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpx, size=tmpx.nbytes)
-            y_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy, size=tmpy.nbytes)
-            z_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz, size=tmpz.nbytes)
-
-            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             
-            #print (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1)
-            CL_fhkl.Fhkl(queue, ((steps_nhkl[j]-steps_nhkl[j-1], 1)),(self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_)
-            cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
-            cl.enqueue_copy(queue, self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_imag_).wait()
-            
+            #Somehow the wait() at the end allows doubling the speed (GTX 295, two gpu-in-one) ??
+            CL_fhkl.Fhkl(queue, ((steps_nhkl[j]-steps_nhkl[j-1], 1)),(self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_).wait()
+          
           if type(self.occ)!=type(None) and type(self.vkzi)==type(None):
             if CL_fhklo==None:
               if self.verbose: print "Compiling CL_fhklo (block size=%d)"%self.block_size
               CL_fhklo = cl.Program(ctx, CL_FHKLO_CODE % kernel_params,).build(options=options)
-            h_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.h[steps_nhkl[j-1]:steps_nhkl[j]], size=self.h[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            k_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.k[steps_nhkl[j-1]:steps_nhkl[j]], size=self.k[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            l_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.l[steps_nhkl[j-1]:steps_nhkl[j]], size=self.l[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-
-            x_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpx  , size=tmpx.nbytes)
-            y_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy  , size=tmpy.nbytes)
-            z_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz  , size=tmpz.nbytes)
             occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=tmpz.nbytes)
 
-            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            
-            CL_fhklo.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_)
-            cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
-            cl.enqueue_copy(queue, self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_imag_).wait()
+            CL_fhklo.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_).wait()
             
           if type(self.occ)!=type(None) and type(self.vkzi)!=type(None):
             if CL_fhklo_grazing==None:
               if self.verbose: print "Compiling CL_fhklo_grazing (block size=%d)"%self.block_size
               CL_fhklo_grazing = cl.Program(ctx, CL_FHKLO_grazing_CODE % kernel_params,).build(options=options)
-            h_    = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.h   [steps_nhkl[j-1]:steps_nhkl[j]], size=self.h   [steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            k_    = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.k   [steps_nhkl[j-1]:steps_nhkl[j]], size=self.k   [steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            l_    = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.l   [steps_nhkl[j-1]:steps_nhkl[j]], size=self.l   [steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             vkzi_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]], size=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-
-            x_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpx  , size=tmpx.nbytes)
-            y_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy  , size=tmpy.nbytes)
-            z_   = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz  , size=tmpz.nbytes)
             occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=tmpocc.nbytes)
-
-            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             
-            CL_fhklo_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_)
-            cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
-            cl.enqueue_copy(queue, self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_imag_).wait()
+            CL_fhklo_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_).wait()
 
           if type(self.occ)==type(None) and type(self.vkzi)!=type(None):
             if CL_fhkl_grazing==None:
               if self.verbose: print "Compiling CL_fhkl_grazing (block size=%d)"%self.block_size
               CL_fhkl_grazing = cl.Program(ctx, CL_FHKL_grazing_CODE % kernel_params,).build(options=options)
-            h_    = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.h   [steps_nhkl[j-1]:steps_nhkl[j]], size=self.h   [steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            k_    = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.k   [steps_nhkl[j-1]:steps_nhkl[j]], size=self.k   [steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            l_    = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.l   [steps_nhkl[j-1]:steps_nhkl[j]], size=self.l   [steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             vkzi_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]], size=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-
-            x_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpx, size=tmpx.nbytes)
-            y_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpy, size=tmpy.nbytes)
-            z_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz, size=tmpz.nbytes)
-
-            fhkl_real_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            fhkl_imag_ = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR,hostbuf=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], size=self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
             
-            CL_fhkl_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_)
-            cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_).wait()
-            cl.enqueue_copy(queue, self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_imag_).wait()
-         
-        self.dt=time.time()-t0
-        self.eventStart.clear()
-        self.eventFinished.set()
+            CL_fhkl_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_).wait()
+          
+        cl.enqueue_copy(queue, self.fhkl_real[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_real_)
+        cl.enqueue_copy(queue, self.fhkl_imag[steps_nhkl[j-1]:steps_nhkl[j]], fhkl_imag_)
+        queue.finish()
+        
+      self.dt=time.time()-t0
+      self.eventStart.clear()
+      self.eventFinished.set()
 
 def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthread=None,sz_imag=None,language="OpenCL",cl_platform=""):
    """
