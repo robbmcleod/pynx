@@ -292,35 +292,57 @@ def speed(gpu_name,do_plot=False,language="OpenCL",cl_platform=""):
     xlim(30,1e7)
     show()
 
-def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False):
-  devlist=['CPU']
-  print "######## PyNX: testing for device: CPU (C++/SSE)"
-  junk=test_fhkl      ("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
-  junk=test_fhklo     ("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
-  junk=test_fhklo_graz("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
-  junk=test_fhkl_graz ("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
-  junk=test_dwba5     ("CPU",show_plot=False  ,verbose=verbose,language="CPU")
-  if gpu.drv!=None:
+def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,gpu_name=None,language=None,cl_platform=None):
+  test_cpu= language==None or language=="CPU"
+  if gpu_name!=None:
+    if gpu_name.lower()!='cpu':
+      test_cpu=False
+  
+  if test_cpu:
+    print "######## PyNX: testing for device: CPU (C++/SSE)"
+    junk=test_fhkl      ("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
+    junk=test_fhklo     ("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
+    junk=test_fhklo_graz("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
+    junk=test_fhkl_graz ("CPU",nx,ny,nz,nh,nk,nl,verbose=verbose,language="CPU")
+    junk=test_dwba5     ("CPU",show_plot=False  ,verbose=verbose,language="CPU")
+
+  test_cuda= gpu.drv!=None
+  if language!=None: 
+    if language.lower()!='cuda':
+      test_cuda=False
+
+  if test_cuda:
     gpu.drv.init()
     for i in xrange(gpu.drv.Device.count()): 
       d=gpu.drv.Device(i).name()
+      if gpu_name!=None:
+        if d.lower().find(gpu_name.lower())<0:
+          continue
       print "######## PyNX: testing for device (CUDA): ",d
       junk=test_fhkl      (d,nx,ny,nz,nh,nk,nl,verbose=verbose,language='CUDA')
       junk=test_fhklo     (d,nx,ny,nz,nh,nk,nl,verbose=verbose,language='CUDA')
       junk=test_fhklo_graz(d,nx,ny,nz,nh,nk,nl,verbose=verbose,language='CUDA')
       junk=test_fhkl_graz (d,nx,ny,nz,nh,nk,nl,verbose=verbose,language='CUDA')
       junk=test_dwba5     (d,show_plot=False  ,verbose=verbose,language='CUDA')
-  if gpu.drv!=None:
-    gpu.drv.init()
-    for i in xrange(gpu.drv.Device.count()): devlist.append(gpu.drv.Device(i).name())
-  if gpu.cl!=None:
+
+  test_opencl= gpu.cl!=None
+  if language!=None: 
+    if language.lower()!='opencl':
+      test_opencl=False
+
+  if test_opencl:
     for p in gpu.cl.get_platforms():
-        for d in p.get_devices():
-          print "######## PyNX: testing for device (OpenCL: platform=%s): %s"%(p.name,d.name)
-          junk=test_fhkl      (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
-          junk=test_fhklo     (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
-          junk=test_fhklo_graz(d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
-          junk=test_fhkl_graz (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
-          junk=test_dwba5     (d.name,show_plot=False  ,verbose=verbose,language='OpenCL',cl_platform=p.name)
+      if cl_platform!=None:
+        if p.name.lower().find(cl_platform.lower())<0: 
+          continue
+      for d in p.get_devices():
+        if d.name.lower().find(gpu_name.lower())<0:
+          continue
+        print "######## PyNX: testing for device (OpenCL: platform=%s): %s"%(p.name,d.name)
+        junk=test_fhkl      (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
+        junk=test_fhklo     (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
+        junk=test_fhklo_graz(d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
+        junk=test_fhkl_graz (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
+        junk=test_dwba5     (d.name,show_plot=False  ,verbose=verbose,language='OpenCL',cl_platform=p.name)
 
 
