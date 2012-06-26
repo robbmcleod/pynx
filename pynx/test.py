@@ -336,8 +336,9 @@ def test_all(nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,gpu_name=None,lan
         if p.name.lower().find(cl_platform.lower())<0: 
           continue
       for d in p.get_devices():
-        if d.name.lower().find(gpu_name.lower())<0:
-          continue
+        if gpu_name!=None:
+          if d.name.lower().find(gpu_name.lower())<0:
+            continue
         print "######## PyNX: testing for device (OpenCL: platform=%s): %s"%(p.name,d.name)
         junk=test_fhkl      (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
         junk=test_fhklo     (d.name,nx,ny,nz,nh,nk,nl,verbose=verbose,language='OpenCL',cl_platform=p.name)
