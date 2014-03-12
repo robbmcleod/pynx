@@ -31,21 +31,26 @@ class GPUThreads:
   threads=[]
   def __init__(self,gpu_name="GTX 295",language="",cl_platform="",nbCPUthread=None,verbose=False):
     self.verbose=verbose
-    self.gpu_name=gpu_name
+    self.gpu_name=gpu_name.lower()
     self.language=language
     self.cl_platform=cl_platform
     self.cl_devices=[]
     self.cuda_devices=[]
     self.gpu_name_platform_real=""
-    if language.lower()=="opencl" or language=="":
+    if self.language.lower()=="opencl" or language=="":
       try:
         tmp=[]
         for p in cl.get_platforms():
           if p.name.find(cl_platform)>=0:
             tmp+=p.get_devices()
-        for d in tmp:
-          if d.name.find(gpu_name)>=0:
-            self.cl_devices.append(d)
+        if self.gpu_name=="gpu": # EXPERIMENTAL => "Context failed: out of host memory" ??
+          for d in tmp:
+            if d.type==cl.device_type.GPU:
+              self.cl_devices.append(d)
+        else:
+          for d in tmp:
+            if d.name.lower().find(self.gpu_name)>=0:
+              self.cl_devices.append(d)
         nbthread=len(self.cl_devices)
         for i in xrange(nbthread):
           self.threads.append(OpenCLThread_Fhkl(self.cl_devices[i],verbose=verbose))
@@ -60,7 +65,7 @@ class GPUThreads:
         drv.init()
         cuda_devices=[]
         for i in xrange(drv.Device.count()):
-          if drv.Device(i).name().find(gpu_name)>=0:
+          if drv.Device(i).name().lower().find(self.gpu_name)>=0:
             self.cuda_devices.append(i)
         nbthread=len(self.cuda_devices)
         for i in xrange(nbthread):
@@ -447,6 +452,7 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
       x[tx]=vx[at+tx];
       y[tx]=vy[at+tx];
       z[tx]=vz[at+tx];
+      occ[tx]=vocc[at+tx*1];
    }
    barrier(CLK_LOCAL_MEM_FENCE);
    for(long i=0;i<(natoms-at);i++)
@@ -583,6 +589,7 @@ __kernel void Fhkl(__global float *fhkl_real,__global float *fhkl_imag,
       x[tx]=vx[at+tx];
       y[tx]=vy[at+tx];
       z[tx]=vz[at+tx];
+      occ[tx]=vocc[at+tx];
    }
    barrier(CLK_LOCAL_MEM_FENCE);
    for(long i=0;i<(natoms-at);i++)
@@ -773,7 +780,6 @@ class CUDAThread_Fhkl(threading.Thread):
                       drv.In(self.k   [steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.l   [steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]]),block=(self.block_size,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//self.block_size,1))
-         
         self.dt=time.time()-t0
         self.eventStart.clear()
         self.eventFinished.set()
@@ -798,7 +804,15 @@ class OpenCLThread_Fhkl(threading.Thread):
     self.join_flag=False
     self.bug_apple_cpu_workgroupsize_warning=True
   def run(self):
-    ctx = cl.Context([self.dev])
+    try_ctx=5
+    while try_ctx>0:
+      try:
+        ctx = cl.Context([self.dev])
+        try_ctx=0
+      except:
+        try_ctx-=1
+        print("Problem initializing OpenCL context... #try%d/5, wait%3.1fs"%(5-try_ctx,0.1*(5-try_ctx))) 
+        time.sleep(0.1*(5-try_ctx))
     queue = cl.CommandQueue(ctx)
     mf = cl.mem_flags
     # Kernel program will be initialized when necessary
@@ -878,7 +892,7 @@ class OpenCLThread_Fhkl(threading.Thread):
             if CL_fhklo==None:
               if self.verbose: print "Compiling CL_fhklo (block size=%d)"%self.block_size
               CL_fhklo = cl.Program(ctx, CL_FHKLO_CODE % kernel_params,).build(options=options)
-            occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=tmpz.nbytes)
+            occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=0)
 
             CL_fhklo.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_).wait()
             
@@ -887,7 +901,7 @@ class OpenCLThread_Fhkl(threading.Thread):
               if self.verbose: print "Compiling CL_fhklo_grazing (block size=%d)"%self.block_size
               CL_fhklo_grazing = cl.Program(ctx, CL_FHKLO_grazing_CODE % kernel_params,).build(options=options)
             vkzi_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]], size=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
-            occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=tmpocc.nbytes)
+            occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=0)
             
             CL_fhklo_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_).wait()
 
