@@ -254,7 +254,7 @@ def mrats(nhkl,natoms,gpu_name="GTX",verbose=False,language="OpenCL",cl_platform
    
    return MRAtS
 
-def speed(gpu_name,do_plot=False,language="OpenCL",cl_platform=""):
+def speed(gpu_name,do_plot=False,language="OpenCL",cl_platform="",plot_style='k-o'):
   """Test F(hkl) speed as a function of the number of atoms and reflections. 
   """
   nhkl=100L
@@ -281,7 +281,7 @@ def speed(gpu_name,do_plot=False,language="OpenCL",cl_platform=""):
   if do_plot:
     from pylab import loglog,text,xlabel,ylabel,xlim,log10,show
     for k,v in d.iteritems():
-      loglog(v[0],v[1],'k-o',markersize=3)
+      loglog(v[0],v[1],plot_style,markersize=3)
       text(v[0][0]/2.5,v[1][0],"$10^{%1d}$"%(log10(k)),fontsize=18,weight='bold',verticalalignment='center')
 
     text(70,3e9,"$N_{refl}$",fontsize=18,weight='bold',horizontalalignment='center',verticalalignment='center')
