@@ -93,11 +93,10 @@ class GPUThreads:
       print "Initialized PyNX threads for: "+self.gpu_name+" (language="+self.language+","+self.cl_platform+"), REAL="+self.gpu_name_platform_real
   def __del__(self):
     if self.verbose: print "Deleting GPUThreads object"
-    nbthread=len(self)
-    for j in xrange(nbthread):
-      self.threads[0].join_flag=True
-      self.threads[0].eventStart.set()
-      self.threads[0].join()
+    while len(self)>0:
+      self.threads[-1].join_flag=True
+      self.threads[-1].eventStart.set()
+      self.threads[-1].join()
       self.threads.pop()
   def __len__(self): return len(self.threads)
   def __getitem__(self,i): return self.threads[i]
@@ -719,7 +718,7 @@ class CUDAThread_Fhkl(threading.Thread):
             tmpocc=self.occ[steps_nbatoms[i-1]:steps_nbatoms[i]]
           #if self.verbose: print [steps_nbatoms[i-1],steps_nbatoms[i]]
           if type(self.occ)==type(None) and type(self.vkzi)==type(None):
-            if CUDA_fhkl==None:
+            if type(CUDA_fhkl)==type(None):
               if self.verbose: print "Compiling CUDA_fhkl (block size=%d)"%self.block_size
               mod_fhkl = compiler.SourceModule(mod_fhkl_str%(self.block_size), options=["-use_fast_math"])
               CUDA_fhkl = mod_fhkl.get_function("CUDA_fhkl")
@@ -732,7 +731,7 @@ class CUDAThread_Fhkl(threading.Thread):
                       drv.In(self.k[steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.l[steps_nhkl[j-1]:steps_nhkl[j]]),block=(self.block_size,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//self.block_size,1))
           if type(self.occ)!=type(None) and type(self.vkzi)==type(None):
-            if CUDA_fhklo==None:
+            if type(CUDA_fhklo)==type(None):
               if self.verbose: print "Compiling CUDA_fhklo (block size=%d)"%self.block_size
               mod_fhklo = compiler.SourceModule(mod_fhklo_str%(self.block_size), options=["-use_fast_math"])
               CUDA_fhklo = mod_fhklo.get_function("CUDA_fhklo")
@@ -747,7 +746,7 @@ class CUDAThread_Fhkl(threading.Thread):
                       drv.In(self.k[steps_nhkl[j-1]:steps_nhkl[j]]),
                       drv.In(self.l[steps_nhkl[j-1]:steps_nhkl[j]]),block=(self.block_size,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//self.block_size,1))
           if type(self.occ)!=type(None) and type(self.vkzi)!=type(None):
-            if CUDA_fhkl_grazing==None:
+            if type(CUDA_fhkl_grazing)==type(None):
               if self.verbose:print "Compiling CUDA_fhklo_grazing (block size=%d)"%self.block_size
               mod_fhkl_grazing = compiler.SourceModule(mod_fhklo_grazing_str%(self.block_size), options=["-use_fast_math"])
               CUDA_fhkl_grazing = mod_fhkl_grazing.get_function("CUDA_fhklo_grazing")
@@ -764,7 +763,7 @@ class CUDAThread_Fhkl(threading.Thread):
                       drv.In(self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]]),block=(self.block_size,1,1),grid=((steps_nhkl[j]-steps_nhkl[j-1])//self.block_size,1))
           if type(self.occ)==type(None) and type(self.vkzi)!=type(None):
             #Also use CUDA_fhklo_grazing, just create a temporary occ=1, performance loss is negligeable
-            if CUDA_fhkl_grazing==None:
+            if type(CUDA_fhkl_grazing)==type(None):
               if self.verbose:print "Compiling CUDA_fhklo_grazing (block size=%d)"%self.block_size
               mod_fhkl_grazing = compiler.SourceModule(mod_fhklo_grazing_str%(self.block_size), options=["-use_fast_math"])
               CUDA_fhkl_grazing = mod_fhkl_grazing.get_function("CUDA_fhklo_grazing")
@@ -881,7 +880,7 @@ class OpenCLThread_Fhkl(threading.Thread):
           z_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpz, size=0)
           #if self.verbose: print [steps_nbatoms[i-1],steps_nbatoms[i]]
           if type(self.occ)==type(None) and type(self.vkzi)==type(None):
-            if CL_fhkl==None:
+            if type(CL_fhkl)==type(None):
               if self.verbose: print "Compiling CL_fhkl (block size=%d)"%self.block_size
               CL_fhkl = cl.Program(ctx, CL_FHKL_CODE % kernel_params,).build(options=options)
             
@@ -889,7 +888,7 @@ class OpenCLThread_Fhkl(threading.Thread):
             CL_fhkl.Fhkl(queue, ((steps_nhkl[j]-steps_nhkl[j-1], 1)),(self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, numpy.int64(len(tmpx)), h_, k_, l_).wait()
           
           if type(self.occ)!=type(None) and type(self.vkzi)==type(None):
-            if CL_fhklo==None:
+            if type(CL_fhklo)==type(None):
               if self.verbose: print "Compiling CL_fhklo (block size=%d)"%self.block_size
               CL_fhklo = cl.Program(ctx, CL_FHKLO_CODE % kernel_params,).build(options=options)
             occ_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=tmpocc, size=0)
@@ -897,7 +896,7 @@ class OpenCLThread_Fhkl(threading.Thread):
             CL_fhklo.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_).wait()
             
           if type(self.occ)!=type(None) and type(self.vkzi)!=type(None):
-            if CL_fhklo_grazing==None:
+            if type(CL_fhklo_grazing)==type(None):
               if self.verbose: print "Compiling CL_fhklo_grazing (block size=%d)"%self.block_size
               CL_fhklo_grazing = cl.Program(ctx, CL_FHKLO_grazing_CODE % kernel_params,).build(options=options)
             vkzi_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]], size=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
@@ -906,7 +905,7 @@ class OpenCLThread_Fhkl(threading.Thread):
             CL_fhklo_grazing.Fhkl(queue, (steps_nhkl[j]-steps_nhkl[j-1], 1), (self.block_size,1), fhkl_real_, fhkl_imag_, x_, y_, z_, occ_, numpy.int64(len(tmpx)), h_, k_, l_,vkzi_).wait()
 
           if type(self.occ)==type(None) and type(self.vkzi)!=type(None):
-            if CL_fhkl_grazing==None:
+            if type(CL_fhkl_grazing)==type(None):
               if self.verbose: print "Compiling CL_fhkl_grazing (block size=%d)"%self.block_size
               CL_fhkl_grazing = cl.Program(ctx, CL_FHKL_grazing_CODE % kernel_params,).build(options=options)
             vkzi_ = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,hostbuf=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]], size=self.vkzi[steps_nhkl[j-1]:steps_nhkl[j]].nbytes)
