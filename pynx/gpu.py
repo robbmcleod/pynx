@@ -936,7 +936,7 @@ def Fhkl_thread(h,k,l,x,y,z,occ=None,verbose=False,gpu_name="GTX 295",nbCPUthrea
    if gputhreads==None:
      if verbose: print "Fhkl_thread: initilizing gputhreads with GPU=%s, language=%s,cl_platform=%s"%(gpu_name,language,cl_platform)
      gputhreads=GPUThreads(gpu_name,nbCPUthread=nbCPUthread,verbose=verbose,language=language,cl_platform=cl_platform)
-   elif gputhreads.gpu_name!=gpu_name or gputhreads.language!=language or gputhreads.cl_platform!=cl_platform:
+   elif gputhreads.gpu_name.lower()!=gpu_name.lower() or gputhreads.language.lower()!=language.lower() or gputhreads.cl_platform.lower()!=cl_platform.lower():
      # GPU has changed, re-initialize
      gputhreads=None
      if verbose: print "Fhkl_thread: initilizing gputhreads with GPU=%s, language=%s,cl_platform=%s"%(gpu_name,language,cl_platform)
