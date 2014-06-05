@@ -21,7 +21,7 @@ def test_fhkl(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,languag
   tmp=diff.mean()/abs(fhkl_gold).mean()
   s="PASS"
   if tmp>0.01:s="FAIL"
-  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhkl",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
+  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%7.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhkl",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
 def test_fhklo(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
@@ -43,7 +43,7 @@ def test_fhklo(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,langua
   tmp=diff.mean()/abs(fhkl_gold).mean()
   s="PASS"
   if tmp>0.01:s="FAIL"
-  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhklo",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
+  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%7.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhklo",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
 def test_fhklo_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
@@ -66,7 +66,7 @@ def test_fhklo_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,l
   tmp=diff.mean()/abs(fhkl_gold).mean()
   s="PASS"
   if tmp>0.01:s="FAIL"
-  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhklo_graz",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
+  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%7.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhklo_graz",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
 def test_fhkl_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,language="OpenCL",cl_platform=""):
@@ -88,7 +88,7 @@ def test_fhkl_graz(gpu_name,nx=40,ny=40,nz=40,nh=40,nk=40,nl=40,verbose=False,la
   tmp=diff.mean()/abs(fhkl_gold).mean()
   s="PASS"
   if tmp>0.01:s="FAIL"
-  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%6.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhkl_graz",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
+  print "%20s: %5d 10^3 reflections, %5d 10^3 atoms, speed=%7.3f 10^9 reflections.atoms/s  =>   <|GPU-analytical|> / <|analytical|>=%7.5f, %10s"%("fhkl_graz",nh*nk*nl//1000,nx*ny*nz//1000,nx*ny*nz*nh*nk*nl/dt/1e9, tmp,s)
   return tmp<0.01
 
 def test_dwba4(gpu_name,show_plot=True,verbose=True,language="OpenCL",cl_platform=""):
@@ -250,7 +250,7 @@ def mrats(nhkl,natoms,gpu_name="GTX",verbose=False,language="OpenCL",cl_platform
    fhkl,dt=gpu.Fhkl_thread(h,k,l,x,y,z,verbose=False,gpu_name=gpu_name,nbCPUthread=None,language=language,cl_platform=cl_platform)
    MRAtS=nhkl*float(natoms)/dt/1e6
    fhkl_gold,dt_gold=None,None
-   if verbose: print "%7d reflections, %8d atoms, dt=%7.5fs , %9.3f MAtoms.reflections/s (%s)"%(nhkl,natoms,dt,MRAtS,gpu_name)
+   if verbose: print "%7d reflections, %8d atoms, dt=%7.5fs , %10.3f MAtoms.reflections/s (%s)"%(nhkl,natoms,dt,MRAtS,gpu_name)
    
    return MRAtS
 
