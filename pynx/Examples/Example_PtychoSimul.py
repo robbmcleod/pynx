@@ -30,7 +30,10 @@ nx,ny = ptycho.objShape(pos, ampl.shape[1:])
 
 # Evaluation method
 method = 'Thibault2009'
+# or one can pass the method as a dictionry along with some parameteres of the update:
+#method = {'method': 'Thibault2009', 'reg_const_object':0.01,'reg_const_probe':0.01} 
 #method = 'Maiden2009'
+#method={'method': 'Maiden2009','learning_const_object':1,'learning_const_probe':1}
 savethis = True
 for evaluation in (1,):
     print "\nEvaluation: %g" %evaluation            
@@ -51,7 +54,7 @@ for evaluation in (1,):
     p.Run(p.niterUpProbeFalse,verbose=10,updateProbe=False,method=method)
 
     # updating both object and probe
-    p.niterUpProbeTrue = 200
+    p.niterUpProbeTrue = 400
     p.Run(p.niterUpProbeTrue,verbose=10,updateProbe=True,method=method)
     
     # Saving results (initial probe and object, reconstructed probe and object and convergence curve (R))
@@ -59,5 +62,5 @@ for evaluation in (1,):
         resdir='Results'
         #appApp = ('_scanINT_R%.4f' % p.R()).replace('.', '-') #'_R'+str(int(p.R()*10000))          
         appApp =''
-        nameApp='_niterUpdateObj'+str(p.niterUpProbeFalse)+'_niterUpdateObjProbe'+str(p.niterUpProbeTrue)+'_method'+method+'_eval'+ str(evaluation)+appApp
+        nameApp='_niterUpdateObj'+str(p.niterUpProbeFalse)+'_niterUpdateObjProbe'+str(p.niterUpProbeTrue)+'_method'+p.method+'_eval'+ str(evaluation)+appApp
         p.SaveResults(resdir=resdir, name_appendix = nameApp)

@@ -24,7 +24,12 @@ def plotR(filename = "Results/R_*",showLegend = True, showNumbers = True, plotGr
     Examples:
     plotR() - plots all convergence curves stored under default name Results/R_*
     plotR(filename=<name_file_pattern>) plots all curves matching <name_file_pattern>: e.g. plotR(filename='Results/R_*Thibaut*') - plots all curves containing "R_" and "Thibault"
-    set showLegend=False not to show the legend
+    set showLegend=False not to show the legend.
+    
+    Filename of the best object and probe:
+    r = ptycho.plotR()
+    obj_best = r[0]%'obj' 
+    probe_best = r[0]%'probe'
     """
     plt.figure()
     leg = []
@@ -400,13 +405,13 @@ class Ptycho2D:
         self.obj = obj/(np.maximum(objnorm,reg)) # to avoid underflow
         
     elif "maiden2009" in self.method.lower():        
-        if 'learning_constant_object' not in self.params.keys():
-            self.params['learning_constant_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
+        if 'learning_const_object' not in self.params.keys():
+            self.params['learning_const_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
         cy = y0//2+dy-ny//2
-        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_constant_object'])
+        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_const_object'])
     else:
         raise Exception('Unknown method: '+self.method)
 
@@ -442,13 +447,13 @@ class Ptycho2D:
         self.obj = obj/(np.maximum(objnorm,reg)) # to avoid underflow
 
     elif "maiden2009" in self.method.lower():
-        if 'learning_constant_object' not in self.params.keys():
-            self.params['learning_constant_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
+        if 'learning_const_object' not in self.params.keys():
+            self.params['learning_const_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
         cy = y0//2+dy-ny//2
-        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_constant_object'])
+        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_const_object'])
     else:
         raise Exception('Unknown method: '+self.method)
 
@@ -475,14 +480,14 @@ class Ptycho2D:
           self.probe = probe/np.maximum(probenorm,reg) # to avoid underflow
 
     elif "maiden2009" in self.method.lower():
-        if 'learning_constant_probe' not in self.params.keys():
-            self.params['learning_constant_probe'] = 1 # learing constant, value of a=1 used in maiden2009 paper
+        if 'learning_const_probe' not in self.params.keys():
+            self.params['learning_const_probe'] = 1 # learing constant, value of a=1 used in maiden2009 paper
 
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
         cy = y0//2+dy-ny//2
-        self.probe += ePIEupdate(self.obj[cx:cx+nx,cy:cy+ny],d.psi,d.psi0,self.params['learning_constant_probe'])
+        self.probe += ePIEupdate(self.obj[cx:cx+nx,cy:cy+ny],d.psi,d.psi0,self.params['learning_const_probe'])
     else:
         raise Exception('Unknown method: '+self.method)
           
@@ -568,7 +573,15 @@ class Ptycho2D:
     mask: insert the mask of valid pixels (bad, invalid or zero pixels are zeros)
     params: dicitionary with certain parameters for evaluation
     """
-    self.method = method
+    if isinstance(method, basestring):
+        self.method = method
+        self.params = {'method':method}
+    elif isinstance(method, dict):
+        self.method = method['method']
+        self.params = method
+    else:
+        raise Exception('Unknown format of the method parameters')
+        
     print "Using method:", self.method      
     print "Evaluating %d frames."%len(self.views)
     self.mask = mask
@@ -576,9 +589,6 @@ class Ptycho2D:
     else: print "No mask!"
     if not hasattr(self, 'Rarray'): 
         self.Rarray=[]
-
-    self.params = params    
-    self.params['method']=self.method
     
     if 'thibault' in self.method.lower():        
         for i in xrange(ncycle):
