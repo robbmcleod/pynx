@@ -130,13 +130,13 @@ def objShape(pos, probe_shape):
 
     return nx,ny
     
-def showProgress(obj,probe,tit1='Object',tit2='Probe',figNum=100):
+def showProgress(obj,probe,tit1='Object',tit2='Probe',stit=None, figNum=100):
       """
       Plots the progress of the ptychographic evaluation. 
       """
       gs = gridspec.GridSpec(2, 2, height_ratios=[1, probe.shape[0]/obj.shape[0]]) 
       plt.ion()
-      plt.figure(figNum)
+      fig = plt.figure(figNum)
       
       ax0 = plt.subplot(gs[0])
       ax0.imshow(np.abs(obj))
@@ -153,6 +153,10 @@ def showProgress(obj,probe,tit1='Object',tit2='Probe',figNum=100):
       ax2 = plt.subplot(gs[3])      
       ax2.imshow(np.angle(probe))                           
       plt.title(tit2 + ' phase')            
+      
+      if stit:
+          txt = fig.suptitle('')
+          txt.set_text(stit)
       plt.draw()
       
 
@@ -558,8 +562,8 @@ class Ptycho2D:
       print "Ptycho cycle %3d: R= %6.4f%%,  dt/cycle=%6.2fs"%(i,r*100,dt)
       s_calc_logabs = np.log10(abs(self.views[0].s_calc0).clip(1e-6))*exp(1j*np.angle(self.views[0].s_calc0))
       s_obs0 = np.log10(self.views[0].s_obs.clip(1e-6))
-      showProgress(s_calc_logabs,s_obs0,tit1='s_calc0',tit2='s_obs',figNum=101)                  
-      showProgress(self.obj,self.probe)      
+      showProgress(s_calc_logabs,s_obs0,tit1='s_calc0',tit2='s_obs',figNum=101, stit="%s: cycle %3d: R= %6.4f%%"%(self.method,i,r*100))  
+      showProgress(self.obj,self.probe, stit="%s: cycle %3d: R= %6.4f%%"%(self.method,i,r*100))      
                     
         
   def Run(self,ncycle,method="Thibault2009",updateProbe=False,verbose=False,mask=None, subPix = False, params={}):
@@ -983,24 +987,10 @@ class Simulation:
 
         if obj_type == 'custom':
             obj = self.obj.values
-        elif obj_type in ('flat','random'):
-            s0,s1 = info['shape']
-            im_tmp = np.zeros( (s0,s1) )
-        else:
-            im_tmp = get_img(0)
-            s0,s1 = im_tmp.shape                                
-
-        # Ensure the even size:        
-        if s0%2: s0 -= 1
-        if s1%2: s1 -= 1
-        s = s0,s1
-        im0 = im_tmp[:s[0],:s[1]]
-            
-        if obj_type == 'real':
-            obj = im0        
             
         elif ('ampl' in obj_type) and ('phase' in obj_type):
-            im1 = get_img(1)[:s[0],:s[1]]
+            im0 = get_img(0)
+            im1 = get_img(1)
             # Strethc the phase to interval (-phase_stretch/2, +phase_stretch/2)
             phase0 = im1 - im1.min()
             ps = 2*np.pi
@@ -1008,15 +998,17 @@ class Simulation:
             obj = im0 * np.exp(1j*phase_stretch)
             
         elif ('real' in obj_type) and ('imag' in obj_type):
-            im1 = get_img(1)[:s[0],s[1]]
+            im0 = get_img(0)
+            im1 = get_img(1)
             obj = im0 + 1j*im1
             
         elif obj_type.lower() == 'random':
+            s = info['shape']
             rand_phase = 2*np.pi*np.random.rand(s[0],s[1])-np.pi
             obj = np.random.rand(s[0],s[1])*np.exp(1j*rand_phase)
             
         elif obj_type.lower() == 'flat':
-            obj = np.ones(s).astype(complex)
+            obj = np.ones(info['shape']).astype(complex)
             
         else:
             msg = "Unknown object type:", self.obj.info['type']
@@ -1032,6 +1024,7 @@ class Simulation:
                 obj = abs(obj) * np.exp(1j*phase_stretch)
         
         if 'alpha_win' in info:
+            s =  obj.shape
             w = imProc.tukeywin2D(s, info['alpha_win'])    
             obj *= w # tuckey window to smooth edges (alpha_win)
             
