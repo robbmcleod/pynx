@@ -6,77 +6,148 @@
 #
 ########################################################################
 from __future__ import division
+import sys, os, time, glob
 import numpy as np
-import sys, os, time
-from scipy import fftpack,log10,sqrt,signal,pi,arctan2,exp,linspace,newaxis,zeros,array,float32,complex64,arange,cos
-from scipy.fftpack import fftn,ifftn,ifftshift, fftshift, fft2, ifft2
-from pylab import gca,text,figure,imshow,title,clf,savefig,colorbar,rcParams,figtext,axes,subplot
-from matplotlib import pyplot as plt
+
+from scipy import log10, sqrt, pi, exp, float32,complex64
+from scipy.fftpack import ifftshift, fftshift, fft2, ifft2
 from scipy.optimize import minimize
 
+from matplotlib import pyplot as plt
+from matplotlib import gridspec
+import matplotlib.cm as cm
 
-def complex2rgbalog(s,amin=0.5,dlogs=2):
-   ph=arctan2(s.imag,s.real)
+def plotR(filename = "Results/R_*",showLegend = True, showNumbers = True, plotGraph = True, fontsize = 5):
+    """
+    Plots convergence curves.
+    
+    Examples:
+    plotR() - plots all convergence curves stored under default name Results/R_*
+    plotR(filename=<name_file_pattern>) plots all curves matching <name_file_pattern>: e.g. plotR(filename='Results/R_*Thibaut*') - plots all curves containing "R_" and "Thibault"
+    set showLegend=False not to show the legend
+    """
+    plt.figure()
+    leg = []
+    Rmin=1.
+    index = 0
+    files = glob.glob(filename)
+    rall = np.zeros(len(files))
+    nfiles = len(files)
+    colors = cm.rainbow(np.linspace(0, 1, nfiles))
+    for filename in files:
+        R = np.load(filename)
+        rall[index] = R[-1]        
+        index += 1  
+    
+    ind_sort = [i[0] for i in sorted(enumerate(rall), key=lambda x:x[1])]
+    files_sort =  list( files[i] for i in ind_sort)
+    rall_sort =  list( rall[i] for i in ind_sort)
+    index = 0
+    for filename, c in zip(files_sort, colors):
+        R = np.load(filename)
+        plt.semilogy(R,c=c)
+        if showNumbers: 
+            plt.text(len(R),R[-1],str(index))
+        leg.append(str(index) + ' ' + filename)
+        index += 1
+
+    plt.grid(b=True, which = 'both')    
+    if showLegend:
+        plt.legend(leg, fontsize = fontsize)
+        
+    evMin = files_sort[0]    
+    try:
+        evMin = evMin.replace("R_","%s_") # one can load e.g. best object: by load(evMin%'obj')
+    except:
+        pass
+    Rmin = rall_sort[0]
+    print "Best: " + evMin + " @ " + str(Rmin)
+    return evMin, rall_sort, leg 
+    
+def getIms(filename = "Results/obj_*"):
+    """
+    Returns all images matching given pattern.
+
+    Example: 
+    imgs = getIms(filename = "Results/obj_*")
+    imgs[0] - array containing all saved reconsructe objects
+    imgs = getIms(filename = "Results/probe_*Thibault*")
+    imgs[0] - array containing all probes containing "Thibault" in their names
+    
+    """
+    files = glob.glob(filename)
+    im_all = np.load(files[0])[np.newaxis]
+    for filename in files[1:]:
+        im = np.load(filename)
+        im_all = np.concatenate((im_all, im[np.newaxis]),0)        
+    return im_all, files
+
+def phase2rgb(s):
+   """
+   Crates RGB image with colour-coded phase. 
+   """
+   ph=np.angle(s)
    t=pi/3
-   nx,ny=s.shape
-   rgba=np.zeros((nx,ny,4))
+   nx,ny=s.shape   
+   rgba=np.zeros((nx,ny,4))   
    rgba[:,:,0]=(ph<t)*(ph>-t) + (ph>t)*(ph<2*t)*(2*t-ph)/t + (ph>-2*t)*(ph<-t)*(ph+2*t)/t
    rgba[:,:,1]=(ph>t)         + (ph<-2*t)      *(-2*t-ph)/t+ (ph>0)*(ph<t)    *ph/t
    rgba[:,:,2]=(ph<-t)        + (ph>-t)*(ph<0) *(-ph)/t + (ph>2*t)         *(ph-2*t)/t
+   return rgba
+
+def complex2rgbalog(s,amin=0.5,dlogs=2):
+   """
+   Returns RGB image with colour-coded phases and log10(amplitude) in birghtness. 
+   """
+   rgba = phase2rgb(s)
    a=np.log10(abs(s)+1e-20)
    a-=a.max()-dlogs # display dlogs orders of magnitude
    rgba[:,:,3]=amin+a/dlogs*(1-amin)*(a>0)
    return rgba
 
 def complex2rgbalin(s):
-   ph=arctan2(s.imag,s.real)
-   t=pi/3
-   nx,ny=s.shape
-   rgba=np.zeros((nx,ny,4))
-   rgba[:,:,0]=(ph<t)*(ph>-t) + (ph>t)*(ph<2*t)*(2*t-ph)/t + (ph>-2*t)*(ph<-t)*(ph+2*t)/t
-   rgba[:,:,1]=(ph>t)         + (ph<-2*t)      *(-2*t-ph)/t+ (ph>0)*(ph<t)    *ph/t
-   rgba[:,:,2]=(ph<-t)        + (ph>-t)*(ph<0) *(-ph)/t + (ph>2*t)         *(ph-2*t)/t
+   """
+   Returns RGB image with with colour-coded phase and log10(amplitude) in birghtness. 
+   """
+   rgba = phase2rgb(s)
    a=np.abs(s)
    a/=a.max()
    rgba[:,:,3]=a
    return rgba
 
   
-def getShiftLims(data):
-    minx,miny=np.inf,np.inf
-    maxx,maxy=-np.inf,-np.inf
-    for i in data:
-        if i.dx<minx:
-            minx=i.dx
-        if i.dy<miny:
-            miny=i.dy
-        if i.dx>maxx:
-            maxx=i.dx
-        if i.dy>maxy:
-            maxy=i.dy
-    return minx,maxx,miny,maxy
+def objShape(pos, probe_shape):
+    """
+    Determines the required size for the reconstructed object. 
+    """
+    nx = 2*(abs(np.ceil(pos[0]+50))).max() + probe_shape[0]
+    ny = 2*(abs(np.ceil(pos[1]+50))).max() + probe_shape[1]    
+
+    return nx,ny
     
 def showProgress(obj,probe,tit1='Object',tit2='Probe',figNum=100):
-      from matplotlib import gridspec
+      """
+      Plots the progress of the ptychographic evaluation. 
+      """
       gs = gridspec.GridSpec(2, 2, height_ratios=[1, probe.shape[0]/obj.shape[0]]) 
       plt.ion()
       plt.figure(figNum)
       
       ax0 = plt.subplot(gs[0])
       ax0.imshow(np.abs(obj))
-      title(tit1 + ' modulus')      
+      plt.title(tit1 + ' modulus')      
 
       ax1 = plt.subplot(gs[1])
       ax1.imshow(np.angle(obj))      
-      title(tit1 + ' phase')            
+      plt.title(tit1 + ' phase')            
 
       ax2 = plt.subplot(gs[2])
       ax2.imshow(np.abs(probe))           
-      title(tit2 + ' modulus')            
+      plt.title(tit2 + ' modulus')            
       
       ax2 = plt.subplot(gs[3])      
       ax2.imshow(np.angle(probe))                           
-      title(tit2 + ' phase')            
+      plt.title(tit2 + ' phase')            
       plt.draw()
       
 
@@ -84,15 +155,57 @@ def showFT(p):
       a=None
       for d in p.views:
           if a==None:
-              a=d.s_calc0[newaxis,:]
+              a=d.s_calc0[np.newaxis,:]
           else:
-              a=np.concatenate((a,d.s_calc0[newaxis,:]),axis=0)          
-      import plotting
+              a=np.concatenate((a,d.s_calc0[np.newaxis,:]),axis=0)          
       #plt.close(101)
       #plotting.imTiles(np.log(abs(a)))
-      figure()
+      plt.figure()
       plotting.im(np.log(abs(a[0])))
       plt.draw()        
+
+def R_pos(x, p):    
+    xr = x.reshape(2,-1);
+    for i,d in enumerate(p.views):
+        d.dx,d.dy = xr[0,i],xr[1,i]
+    
+    #p.Run(1,verbose=0,updateProbe=True,method='Thibault2009')
+    p.CalcForward()
+    print p.R()
+    return p.R()
+
+def RefinePos(p, method='Powell', opt={'disp':True, 'maxfeval':10}):
+    """
+    Refines positions of the ptychograhic dataset.
+    """
+    n = len(p.views)
+    posx = np.zeros(n)
+    posy = np.zeros(n)
+    for i,d in enumerate(p.views):
+        posx[i],posy[i] = d.dx,d.dy
+    args = p,
+    res = minimize(R_pos, np.concatenate( (posx,posy) ,axis=0) , args=args, method=method, options=opt)
+    return res.x.reshape(2,-1)
+    
+def RefinePosUpdate(p, n_cycles=3, method_refine='Powell', opt={'disp':True, 'maxfeval':10}, method_ptycho='Maiden2009', n_updates=100):
+    """
+    Refines positions of the ptychograhic dataset and cycles it with ptychographic updates. 
+    """
+    for i in range(n_cycles):
+        RefinePos(p,method = method_refine,opt=opt)
+        p.Run(n_updates,verbose=10,updateProbe=True,method=method_ptycho)
+        
+def ShowPos(p,show_plot=False):
+    rx = np.zeros(len(p.views))
+    ry = np.zeros(len(p.views))    
+    for i,v in enumerate(p.views):
+        rx[i],ry[i] = v.dx, v.dy
+    if show_plot:
+        plt.figure();
+        plt.plot(rx,ry,marker='o',color='r')
+        plt.axis('equal')
+        plt.grid(b=True, which='both')    
+    return (rx,ry)
 
 def MakePtychoData(amplitudes,dx,dy):
     """
@@ -102,7 +215,7 @@ def MakePtychoData(amplitudes,dx,dy):
     dy: horizontal position
     """
     views=[]
-    for i in arange(amplitudes.shape[0]):
+    for i in np.arange(amplitudes.shape[0]):
        posx = dx[i]
        posy = dy[i]
        frame = amplitudes[i]
@@ -111,6 +224,7 @@ def MakePtychoData(amplitudes,dx,dy):
     
 class PtychoDiffData2D:
   """
+  Creates the ptychographic set from the amplitudes and corresponding positions of the scan. 
   s_obs are the amplitudes (i.e. sqrt(measured intensity of the diffraction))!
   """
   def __init__(self,s_obs,dx,dy):
@@ -123,9 +237,12 @@ def ePIEupdate(A,psi,psi0,const):
       return const*A.conjugate()*(psi-psi0)/(abs(A)**2).max()
 
 class Ptycho2D:
-  def __init__(self,views,probe0,obj0):
+  """
+  Reconstruction of the ptychograhic data.
+  """
+  def __init__(self,amplitudes,positions,probe0,obj0):
+    self.views = MakePtychoData(amplitudes, positions[0], positions[1])
     self.nbproc = os.sysconf("SC_NPROCESSORS_ONLN")
-    self.views = views
     self.probe = probe0.astype(complex64)
     self.probe0 = probe0.copy()
     self.obj = obj0.astype(complex64)
@@ -134,7 +251,7 @@ class Ptycho2D:
     try: # to do: revise this to use fftshift(fft2(fftshift(A)))
       # use FFTW
       import fftw3f # fftw for float32
-      self.fftw_data = np.zeros(views[0].s_obs.shape, dtype=np.complex64)
+      self.fftw_data = np.zeros(self.views[0].s_obs.shape, dtype=np.complex64)
       # create a forward and backward fft plan
       self.plan_fft = fftw3f.Plan(self.fftw_data,None, direction='forward', flags=['measure'],nthreads=4)
       self.plan_ifft = fftw3f.Plan(self.fftw_data, None, direction='backward', flags=['measure'],nthreads=4)
@@ -187,8 +304,8 @@ class Ptycho2D:
     Otherwise calculation is done for a single position.
     """
     if (dx!=None) and (dy!=None):
-      psi0 = zeros(self.probe.shape).astype(complex64)
-      ftpsi0 = zeros(self.probe.shape).astype(complex64)
+      psi0 = np.zeros(self.probe.shape).astype(complex64)
+      ftpsi0 = np.zeros(self.probe.shape).astype(complex64)
       x0,y0 = self.obj.shape
       nx,ny = self.probe.shape
       cx = x0//2-nx//2+dx # This might have to be changed for objects/probes with odd number of pixels.
@@ -196,8 +313,7 @@ class Ptycho2D:
       psi0 = self.obj[cx:cx+nx,cy:cy+ny]*self.probe # the first index is the vertical direction - top @ 0, second is the horiznontal - left @ 0      
       ftpsi0 = self.fft(psi0)
       return ftpsi0,psi0
-    else:
-        
+    else:        
       if frame_index == None: # Thibault 2009
           frame_range = [0,len(self.views)]
       else: # Maiden2009
@@ -207,13 +323,14 @@ class Ptycho2D:
               d.s_calc0,d.psi0 = self.CalcForward(dx=d.dx,dy=d.dy)
               
   def CalcForward_SubPix(self,dx=None,dy=None,frame_index=None):
-    """Calculate data from the object and probe. Subpixel shift.
+    """
+    Calculate data from the object and probe. Subpixel shift.
     """
     from imProc import shift
     print "sub pix (CalcForward)"    
     if (dx!=None) and (dy!=None):
-      psi0 = zeros(self.probe.shape).astype(complex64)
-      ftpsi0 = zeros(self.probe.shape).astype(complex64)
+      psi0 = np.zeros(self.probe.shape).astype(complex64)
+      ftpsi0 =  np.zeros(self.probe.shape).astype(complex64)
       x0,y0 = self.obj.shape
       nx,ny = self.probe.shape
       cx = x0//2-nx//2
@@ -242,15 +359,12 @@ class Ptycho2D:
         if mask == None:
             tmp = np.abs(d.s_obs)
         else:
-#            s_filt=signal.medfilt2d(abs(d.s_obs))
-#            imFill=np.minimum(np.abs(d.s_calc0),s_filt)
             norm = (d.s_obs*mask).sum()/(np.abs(d.s_calc0)*mask).sum() # normalisation of the modulus, othervise it diverges!
-#            norm=(d.s_obs[mask]).mean()/(np.abs(d.s_calc0)).mean() # normalisation of the modulus, othervise it diverges!        
             d.s_calc0_norm = d.s_calc0*norm
             imFill = np.abs(d.s_calc0_norm)
             tmp = (mask)*np.abs(d.s_obs)+(1-mask)*imFill # the missing pixels are replaced by the calculated values or by filtered values
 
-        if DM: #Difference Map update of psi for Thibault2009
+        if DM: #Difference Map update of psi for Thibault2009 (testing)
             if not hasattr(d,'s_calc'): d.s_calc = d.s_calc0 # this is for the firs time, otherwise is not defined
             if not hasattr(d,'psi'): d.psi = d.psi0 # this is for the firs time, otherwise is not defined        
             s_tmp = 2*d.s_calc0 - d.s_calc            
@@ -268,8 +382,8 @@ class Ptycho2D:
     x0,y0 = self.obj.shape
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
-      obj = zeros(self.obj.shape).astype(complex64)
-      objnorm = zeros(self.obj.shape).astype(float32)
+      obj = np.zeros(self.obj.shape).astype(complex64)
+      objnorm = np.zeros(self.obj.shape).astype(float32)
       for d in self.views:          
         dx,dy = d.dx,d.dy #o positions of the scan
         cx = x0//2+dx-nx//2
@@ -279,17 +393,22 @@ class Ptycho2D:
       if "max" in self.method.lower(): #This is for Thibault2009-max
           self.obj = obj/objnorm.max()
       else:
-#        self.obj = np.minimum(self.obj,1)
-        reg = 1e-2*objnorm.max() #empirical threshold
+        
+        if 'reg_const_object' not in self.params.keys():
+            self.params['reg_const_object'] = 1e-2        
+        reg = self.params['reg_const_object']*objnorm.max() #empirical threshold
         self.obj = obj/(np.maximum(objnorm,reg)) # to avoid underflow
         
-    if "maiden2009" in self.method.lower():        
-        a = 1;
+    elif "maiden2009" in self.method.lower():        
+        if 'learning_constant_object' not in self.params.keys():
+            self.params['learning_constant_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
         cy = y0//2+dy-ny//2
-        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,a)
+        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_constant_object'])
+    else:
+        raise Exception('Unknown method: '+self.method)
 
   def UpdateObject_SubPix(self,frame_index=None):
     """
@@ -301,8 +420,8 @@ class Ptycho2D:
     x0,y0 = self.obj.shape
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
-      obj = zeros(self.obj.shape).astype(complex64)
-      objnorm = zeros(self.obj.shape).astype(float32)
+      obj = np.zeros(self.obj.shape).astype(complex64)
+      objnorm = np.zeros(self.obj.shape).astype(float32)
       for d in self.views:          
         dx,dy = d.dx,d.dy #o positions of the scan
         obj_tmp = np.zeros_like(self.obj)
@@ -318,26 +437,28 @@ class Ptycho2D:
           self.obj = obj/objnorm.max()
       else:
 #        reg = 0.01*objnorm.max() #empirical threshold
+        
         reg = 0.1*objnorm.max() #empirical threshold
         self.obj = obj/(np.maximum(objnorm,reg)) # to avoid underflow
 
-    if "maiden2009" in self.method.lower():
-        a = 1;
+    elif "maiden2009" in self.method.lower():
+        if 'learning_constant_object' not in self.params.keys():
+            self.params['learning_constant_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
         cy = y0//2+dy-ny//2
-        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,a)
-          
-    x0,y0 = self.obj.shape
+        self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_constant_object'])
+    else:
+        raise Exception('Unknown method: '+self.method)
 
     
   def UpdateProbe(self,frame_index=None):
     nx,ny = self.probe.shape
     x0,y0 = self.obj.shape    
     if "thibault2009" in self.method.lower():
-      probe = zeros(self.probe.shape).astype(complex64)
-      probenorm = zeros(self.probe.shape).astype(float32)
+      probe = np.zeros(self.probe.shape).astype(complex64)
+      probenorm = np.zeros(self.probe.shape).astype(float32)
       for d in self.views:
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
@@ -347,16 +468,23 @@ class Ptycho2D:
       if "max" in self.method.lower(): #Thisis for Thibault2009-max
           self.probe = probe/probenorm.max()          
       else: 
-          reg = 0.01*probenorm.max() #emprirical threshold
+          if 'reg_const_probe' not in self.params.keys():
+            self.params['reg_const_probe'] = 1e-2        
+
+          reg = self.params['reg_const_probe']*probenorm.max() #emprirical threshold
           self.probe = probe/np.maximum(probenorm,reg) # to avoid underflow
 
-    if "maiden2009" in self.method.lower():
-        b = 1;
+    elif "maiden2009" in self.method.lower():
+        if 'learning_constant_probe' not in self.params.keys():
+            self.params['learning_constant_probe'] = 1 # learing constant, value of a=1 used in maiden2009 paper
+
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
         cx = x0//2+dx-nx//2
         cy = y0//2+dy-ny//2
-        self.probe += ePIEupdate(self.obj[cx:cx+nx,cy:cy+ny],d.psi,d.psi0,b)
+        self.probe += ePIEupdate(self.obj[cx:cx+nx,cy:cy+ny],d.psi,d.psi0,self.params['learning_constant_probe'])
+    else:
+        raise Exception('Unknown method: '+self.method)
           
   def SaveStateOfPsiHIO(self,state=0):      
       for d in self.views:          
@@ -372,11 +500,11 @@ class Ptycho2D:
   def IntermediateUpdate(self):
       for d in self.views:
           #d.psi0=2*d.psiState[1]-d.psiState[0]
-          d.psi0=2*d.psi0-d.psi
+          d.psi0 = 2*d.psi0-d.psi
 
   def FinalUpdate(self):
       for d in self.views:
-          d.psi=d.psiState[0]+d.psi-d.psiState[1]
+          d.psi = d.psiState[0]+d.psi-d.psiState[1]
   
   def R(self,i=None,chi2=False,mask=None,return_views=False):
     if mask == None: 
@@ -411,25 +539,25 @@ class Ptycho2D:
     
         
   def PlotData(self,i,dlogs=4):
-    subplot(121)
-    imshow(log10(abs(self.views[i].s_obs)),vmin=log10(abs(self.views[i].s_obs)).max()-dlogs)
-    title("$Obs[%d]$"%i)
-    subplot(122)
-    imshow(log10(abs(self.views[i].s_calc0)),vmin=log10(abs(self.views[i].s_calc0)).max()-dlogs)
-    title("$Calc[%d]$"%i)    
+    plt.subplot(121)
+    plt.imshow(log10(abs(self.views[i].s_obs)),vmin=log10(abs(self.views[i].s_obs)).max()-dlogs)
+    plt.title("$Obs[%d]$"%i)
+    plt.subplot(122)
+    plt.imshow(log10(abs(self.views[i].s_calc0)),vmin=log10(abs(self.views[i].s_calc0)).max()-dlogs)
+    plt.title("$Calc[%d]$"%i)    
     
   def PlotObject(self):
-    imshow(complex2rgbalin(self.obj))
+    plt.imshow(complex2rgbalin(self.obj))
 
   def PrintProgress(self,r, i, dt):
       print "Ptycho cycle %3d: R= %6.4f%%,  dt/cycle=%6.2fs"%(i,r*100,dt)
       s_calc_logabs = np.log10(abs(self.views[0].s_calc0).clip(1e-6))*exp(1j*np.angle(self.views[0].s_calc0))
       s_obs0 = np.log10(self.views[0].s_obs.clip(1e-6))
       showProgress(s_calc_logabs,s_obs0,tit1='s_calc0',tit2='s_obs',figNum=101)                  
-      showProgress(self.obj,self.probe)
-
+      showProgress(self.obj,self.probe)      
+                    
         
-  def Run(self,ncycle,method="Thibault2009",updateProbe=False,verbose=False,mask=None, subPix = False):
+  def Run(self,ncycle,method="Thibault2009",updateProbe=False,verbose=False,mask=None, subPix = False, params={}):
     """
     ncycle: number of iterations
     method:
@@ -438,6 +566,7 @@ class Ptycho2D:
     updateProbe: set to True to update probe in each iteration
     verbose: set to True to print updates on the convergence, set to N>1 to plot the progres every N-steps
     mask: insert the mask of valid pixels (bad, invalid or zero pixels are zeros)
+    params: dicitionary with certain parameters for evaluation
     """
     self.method = method
     print "Using method:", self.method      
@@ -445,8 +574,12 @@ class Ptycho2D:
     self.mask = mask
     if self.mask!=None: print "Using mask!"
     else: print "No mask!"
-    if not hasattr(self, 'Rarray'): self.Rarray=[]        
+    if not hasattr(self, 'Rarray'): 
+        self.Rarray=[]
 
+    self.params = params    
+    self.params['method']=self.method
+    
     if 'thibault' in self.method.lower():        
         for i in xrange(ncycle):
           t0=time.time()
@@ -462,25 +595,21 @@ class Ptycho2D:
           innerUpdates=1      
           for j in range(0,innerUpdates):    
               if subPix: 
-                  #self.UpdateObject_SubPix(method=method)
-                  self.UpdateObject()
+                  self.UpdateObject_SubPix(method=method)
               else: 
                   self.UpdateObject()
               if updateProbe: 
                   self.UpdateProbe()
-                  #self.probe=abs(self.probe0)*exp(1j*np.angle(self.probe))
-                  #if ((i+1)%updateProbe)==0: 
-                  #    self.UpdateProbe(method=method)
-                  #else:self.UpdateProbe(method=method)
-    #     self.Normalize(method="probe") # keep probe nomalied: probe.sum()=1
+          #self.Normalize(method="probe") # keep probe nomalied: probe.sum()=1
           self.Rarray=np.append(self.Rarray,self.R(mask=self.mask))
           if verbose:
             if i%verbose==0:
                 self.PrintProgress(self.Rarray[-1],i,time.time()-t0)
+                
     elif 'maiden' in self.method.lower():
         for i in xrange(ncycle):
             t0 = time.time()
-            randSeq=np.random.permutation(arange(0,len(self.views)))
+            randSeq=np.random.permutation(np.arange(0,len(self.views)))
             count=0
             for j in randSeq:
                 count += 1
@@ -488,7 +617,7 @@ class Ptycho2D:
                 self.CalcBackward(frame_index=j,mask=self.mask)
                 self.UpdateObject(frame_index=j)
             if updateProbe:
-                randSeq = np.random.permutation(arange(0,len(self.views)))
+                randSeq = np.random.permutation(np.arange(0,len(self.views)))
                 for j in randSeq:
                     self.CalcForward(frame_index=j)
                     self.CalcBackward(frame_index=j,mask=self.mask)
@@ -526,17 +655,16 @@ class Ptycho2D:
     
   def SaveResults(self, resdir="./Results/", name_appendix = ""):
         if not(os.path.isdir(resdir)): os.mkdir(resdir)  
-        print "Saving results to %s<variable_name>%s.npy"%(resdir,name_appendix)
+        print "Saving results to %s/<variable_name>%s.npy"%(resdir,name_appendix)
         np.save(resdir+'/obj' + name_appendix,self.obj)
         np.save(resdir+'/probe' + name_appendix,self.probe)
         np.save(resdir+'/obj0'+name_appendix,self.obj0)
         np.save(resdir+'/probe0'+name_appendix,self.probe0)
         np.save(resdir+'/R'+name_appendix,self.Rarray)        
+
         
-
-
 """
-Simulation of the ptychographic data. Requires 
+Simulation of the ptychographic data. Requires: 
 Requires imProc module:
 git clone git@github.com:aludnam/imProc.git
 
@@ -651,6 +779,7 @@ class Im:
         if len(self.values) == 2: # scan poisitions
             plt.figure()
             plt.plot(self.values[1],self.values[0],'-x')
+            plt.axis('equal')
             plt.gca().invert_yaxis()
             plt.xlabel('pos_hor [pixels]')
             plt.ylabel('pos_ver [pixels]')
@@ -661,6 +790,9 @@ class Im:
             pass
             
 class Simulation:
+    """
+    Simulation of the ptychographic data.
+    """
     def __init__(self, obj=None, obj_info={}, probe=None, probe_info={}, scan=None, scan_info={}, data_info={}, verbose = 1):
         """
         obj_info: dictionary with   obj_info['type'] = ('real','real_imag','ampl_phase') # type of the object
@@ -838,8 +970,10 @@ class Simulation:
         info = self.obj.info
         obj_type = info['type'].lower()
         print "Simulating object:",obj_type
-        
-        if obj_type in ('flat','random'):
+
+        if obj_type == 'custom':
+            obj = self.obj.values
+        elif obj_type in ('flat','random'):
             s0,s1 = info['shape']
             im_tmp = np.zeros( (s0,s1) )
         else:
@@ -902,11 +1036,13 @@ class Simulation:
         print "Simulating the beam:",info['type']
         probe_type = info['type'].lower()
         
-        if probe_type == 'flat':
-            probe = np.ones(info['shape'])
+        if probe_type == 'custom':
+            pass
+        elif probe_type == 'flat':
+            self.probe.values = np.complex64(np.ones(info['shape']))
             
         elif probe_type == 'gauss':
-            probe = gauss2D(info['shape'], mu = (0,0), sigma = info['sigma_pix'])
+            self.probe.values = np.complex64(gauss2D(info['shape'], mu = (0,0), sigma = info['sigma_pix']))
 
         elif probe_type =='fzp': # partially illuminated Fresnel Zone Plate:
             info['gpu_name'] = "GeForce"
@@ -928,14 +1064,15 @@ class Simulation:
             zprobe = (zprobe+(xprobe+yprobe)*0).astype(np.float32)
             sourcex, sourcey, sourcez = np.float32(0e-6), np.float32(0e-6), np.float32(-50) # Source position (meters)            
 
-            probe,dt,flop = FZP.FZP_thread(x=xprobe, y=yprobe, z=zprobe, sourcex=sourcex, sourcey=sourcey, sourcez=sourcez, wavelength=info['wavelength'], focal_length=info['focal_length'], rmax=info['rmax'], fzp_xmin=40e-6, fzp_xmax=60e-6, fzp_nx=256, fzp_ymin=-30e-6, fzp_ymax=30e-6, fzp_ny=256, r_cs=info['r_cs'], osa_z=info['osa_z'], osa_r=info['osa_r'], nr=info['nr'], ntheta=info['ntheta'],gpu_name=info['gpu_name'])        
+            probe,dt,flop = FZP.FZP_thread(x=xprobe, y=yprobe, z=zprobe, sourcex=sourcex, sourcey=sourcey, sourcez=sourcez, wavelength=info['wavelength'], focal_length=info['focal_length'], rmax=info['rmax'], fzp_xmin=40e-6, fzp_xmax=60e-6, fzp_nx=256, fzp_ymin=-30e-6, fzp_ymax=30e-6, fzp_ny=256, r_cs=info['r_cs'], osa_z=info['osa_z'], osa_r=info['osa_r'], nr=info['nr'], ntheta=info['ntheta'],gpu_name=info['gpu_name'])
+
+            self.probe.values = np.complex64(np.rot90(probe)) # horizontaly elongated
             if self.verbose: 
                 print "dt=%9.5fms, %8.2f Gflops"%(dt*1e3,flop/1e9/dt)           
         else: 
             msg = "Unknown probe type:", self.probe.info['type']
             raise NameError(msg)
             
-        self.probe.values = np.complex64(probe)
 
     def make_scan(self):
         self.update_default_scan()        

@@ -20,11 +20,13 @@ s = ptycho.Simulation(obj_info=obj_info, probe_info=probe_info, scan_info=scan_i
 # Data simulation: probe.show(), obj.show(), scan.show() and s.show_illumination() will visualise (if plottools module is available). 
 s.make_data()
 
+pos = s.scan.values
+ampl = s.amplitude.values # square root of the measured diffraction pattern intensity 
+
 ##################
 # Evaluation: 
 # Size of the reconstructed object (obj)
-nx = 2*max(s.scan.values[0].max(), abs(s.scan.values[0].min())) + s.probe.values.shape[0] 
-ny = 2*max(s.scan.values[1].max(), abs(s.scan.values[1].min())) + s.probe.values.shape[1]
+nx,ny = ptycho.objShape(pos, ampl.shape[1:])
 
 # Evaluation method
 method = 'Thibault2009'
@@ -40,21 +42,16 @@ for evaluation in (1,):
     init = ptycho.Simulation(obj_info=obj_init_info, probe_info=probe_init_info)
     init.make_obj()
     init.make_probe()
-
-    # Construction of the pytchographic data from the measured amplitudes and positions
-    pos = s.scan.values
-    ampl = s.amplitude.values # square root of the measred diffraction pattern intensity 
-    views = ptycho.MakePtychoData(ampl, pos[0], pos[1])
     
     # Initialisation of the data object p with ptychograhic data (views), initial probe (probe0.values) and initial object (obj0.values)
-    p = ptycho.Ptycho2D(views=views, probe0=init.probe.values, obj0=init.obj.values)
+    p = ptycho.Ptycho2D(amplitudes=ampl, positions=pos, probe0=init.probe.values, obj0=init.obj.values)
     
-    # first updte only object and keep the probe
+    # first update only object and keep the probe
     p.niterUpProbeFalse = 50
     p.Run(p.niterUpProbeFalse,verbose=10,updateProbe=False,method=method)
 
     # updating both object and probe
-    p.niterUpProbeTrue = 300
+    p.niterUpProbeTrue = 200
     p.Run(p.niterUpProbeTrue,verbose=10,updateProbe=True,method=method)
     
     # Saving results (initial probe and object, reconstructed probe and object and convergence curve (R))
@@ -62,5 +59,5 @@ for evaluation in (1,):
         resdir='Results'
         #appApp = ('_scanINT_R%.4f' % p.R()).replace('.', '-') #'_R'+str(int(p.R()*10000))          
         appApp =''
-        nameApp='_niterUpProbeFalse'+str(p.niterUpProbeFalse)+'_niterUpProbeTrue'+str(p.niterUpProbeTrue)+'_evalMethod'+method+'_eval'+ str(evaluation)+appApp
+        nameApp='_niterUpdateObj'+str(p.niterUpProbeFalse)+'_niterUpdateObjProbe'+str(p.niterUpProbeTrue)+'_method'+method+'_eval'+ str(evaluation)+appApp
         p.SaveResults(resdir=resdir, name_appendix = nameApp)
