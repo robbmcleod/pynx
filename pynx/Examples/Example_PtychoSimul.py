@@ -29,12 +29,13 @@ ampl = s.amplitude.values # square root of the measured diffraction pattern inte
 nx,ny = ptycho.objShape(pos, ampl.shape[1:])
 
 # Evaluation method
-method = 'Thibault2009'
+#method = 'Thibault2009'
 # or one can pass the method as a dictionry along with some parameteres of the update:
-#method = {'method': 'Thibault2009', 'reg_const_object':0.01,'reg_const_probe':0.01} 
+method = {'method': 'Thibault2009', 'reg_const_object':0.001,'reg_const_probe':0.001} 
 #method = 'Maiden2009'
 #method={'method': 'Maiden2009','learning_const_object':1,'learning_const_probe':1}
 savethis = True
+
 for evaluation in (1,):
     print "\nEvaluation: %g" %evaluation            
 
@@ -54,7 +55,7 @@ for evaluation in (1,):
     p.Run(p.niterUpProbeFalse,verbose=10,updateProbe=False,method=method)
 
     # updating both object and probe
-    p.niterUpProbeTrue = 400
+    p.niterUpProbeTrue = 399
     p.Run(p.niterUpProbeTrue,verbose=10,updateProbe=True,method=method)
     
     # Saving results (initial probe and object, reconstructed probe and object and convergence curve (R))

@@ -69,7 +69,7 @@ def plotR(filename = "Results/R_*",showLegend = True, showNumbers = True, plotGr
     print "Best: " + evMin + " @ " + str(Rmin)
     return evMin, rall_sort, leg 
     
-def getIms(filename = "Results/obj_*"):
+def get_res(filename = "Results/obj_*"):
     """
     Returns all images matching given pattern.
 
@@ -86,6 +86,31 @@ def getIms(filename = "Results/obj_*"):
         im = np.load(filename)
         im_all = np.concatenate((im_all, im[np.newaxis]),0)        
     return im_all, files
+
+def plot_scan(posVert,posHoriz,val=1,xlab=None, ylab=None, vlab=None, show_num=True):
+    """
+    Plots positions of the scan.
+    posVert, posHoriz - vertical and horizontal positions
+    val - optional - one can pas e.g. val=(amplitudes**2).sum(2).sum(1) which will show each marker coloured according to integrated intesnisty
+    xlab,ylab - optional - labels of the axis
+    vlab - optional - label for the colorbar
+    show_num - if set to True, the numbers at each point are shown    
+    """
+    plt.figure(); plt.scatter(posHoriz,posVert,c=val,s=40) # notation in Ptycho is first coordinate vertical and second horizontal... 
+    if show_num:
+        plt.plot(posHoriz,posVert,':')
+        for i in range(len(posVert)):
+            plt.annotate(str(i), xy = (posHoriz[i], posVert[i]), xytext = (5, 0), textcoords = 'offset points')
+    plt.gca().invert_yaxis()    
+    plt.axis('equal')
+    plt.grid(b=True, which='both')    
+    if not isinstance(val,int):
+        cbr = plt.colorbar(format='%.1e')
+        cbr.set_label(vlab, rotation=90)
+    if xlab:
+        plt.xlabel(xlab)
+    if ylab:
+        plt.ylabel(ylab)
 
 def phase2rgb(s):
    """
@@ -105,9 +130,9 @@ def complex2rgbalog(s,amin=0.5,dlogs=2):
    Returns RGB image with colour-coded phases and log10(amplitude) in birghtness. 
    """
    rgba = phase2rgb(s)
-   a=np.log10(abs(s)+1e-20)
-   a-=a.max()-dlogs # display dlogs orders of magnitude
-   rgba[:,:,3]=amin+a/dlogs*(1-amin)*(a>0)
+   a = np.log10(abs(s)+1e-20)
+   a -= a.max()-dlogs # display dlogs orders of magnitude
+   rgba[:,:,3] = amin+a/dlogs*(1-amin)*(a>0)
    return rgba
 
 def complex2rgbalin(s):
@@ -115,9 +140,9 @@ def complex2rgbalin(s):
    Returns RGB image with with colour-coded phase and log10(amplitude) in birghtness. 
    """
    rgba = phase2rgb(s)
-   a=np.abs(s)
-   a/=a.max()
-   rgba[:,:,3]=a
+   a = np.abs(s)
+   a /= a.max()
+   rgba[:,:,3] = a
    return rgba
 
   
@@ -125,8 +150,8 @@ def objShape(pos, probe_shape):
     """
     Determines the required size for the reconstructed object. 
     """
-    nx = 2*(abs(np.ceil(pos[0]+50))).max() + probe_shape[0]
-    ny = 2*(abs(np.ceil(pos[1]+50))).max() + probe_shape[1]    
+    nx = 2*(abs(np.ceil(pos[0]))).max() + probe_shape[0]
+    ny = 2*(abs(np.ceil(pos[1]))).max() + probe_shape[1]    
 
     return nx,ny
     
@@ -204,7 +229,7 @@ def RefinePosUpdate(p, n_cycles=3, method_refine='Powell', opt={'disp':True, 'ma
         RefinePos(p,method = method_refine,opt=opt)
         p.Run(n_updates,verbose=10,updateProbe=True,method=method_ptycho)
         
-def ShowPos(p,show_plot=False):
+def get_pos(p,show_plot=False):
     rx = np.zeros(len(p.views))
     ry = np.zeros(len(p.views))    
     for i,v in enumerate(p.views):
@@ -215,6 +240,19 @@ def ShowPos(p,show_plot=False):
         plt.axis('equal')
         plt.grid(b=True, which='both')    
     return (rx,ry)
+
+def get_s_calc0(p):
+    sx, sy = p.views[0].s_calc0.shape
+    sz = len(p.views)
+    s_calc0 = np.zeros( (sz,sx,sy) ,dtype=p.views[0].s_calc0.dtype)
+    for i,v in enumerate(p.views):
+        s_calc0[i] = v.s_calc0
+    return s_calc0
+
+def get_view_coord(obj_shape, probe_shape, shift):
+    cx = (obj_shape[0]-probe_shape[0])//2 + shift[0]
+    cy = (obj_shape[1]-probe_shape[1])//2 + shift[1]
+    return cx, cy
 
 def MakePtychoData(amplitudes,dx,dy):
     """
@@ -315,10 +353,8 @@ class Ptycho2D:
     if (dx!=None) and (dy!=None):
       psi0 = np.zeros(self.probe.shape).astype(complex64)
       ftpsi0 = np.zeros(self.probe.shape).astype(complex64)
-      x0,y0 = self.obj.shape
       nx,ny = self.probe.shape
-      cx = x0//2-nx//2+dx # This might have to be changed for objects/probes with odd number of pixels.
-      cy = y0//2-ny//2+dy      
+      cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
       psi0 = self.obj[cx:cx+nx,cy:cy+ny]*self.probe # the first index is the vertical direction - top @ 0, second is the horiznontal - left @ 0      
       ftpsi0 = self.fft(psi0)
       return ftpsi0,psi0
@@ -340,10 +376,8 @@ class Ptycho2D:
     if (dx!=None) and (dy!=None):
       psi0 = np.zeros(self.probe.shape).astype(complex64)
       ftpsi0 =  np.zeros(self.probe.shape).astype(complex64)
-      x0,y0 = self.obj.shape
       nx,ny = self.probe.shape
-      cx = x0//2-nx//2
-      cy = y0//2-ny//2
+      cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
       obj_shift = shift(self.obj,-dx,-dy,verbose = False)
       psi0 = obj_shift[cx:cx+nx,cy:cy+ny]*self.probe # the first index is the vertical direction - top @ 0, second is the horiznontal - left @ 0      
       ftpsi0 = self.fft(psi0)
@@ -388,15 +422,13 @@ class Ptycho2D:
     This is equation from setting gradient of the square-of differences between the measured 
     and estimatedwrt to Object to zero.  
     """
-    x0,y0 = self.obj.shape
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
       obj = np.zeros(self.obj.shape).astype(complex64)
       objnorm = np.zeros(self.obj.shape).astype(float32)
       for d in self.views:          
         dx,dy = d.dx,d.dy #o positions of the scan
-        cx = x0//2+dx-nx//2
-        cy = y0//2+dy-ny//2
+        cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
         objnorm[cx:cx+nx,cy:cy+ny] += abs(self.probe)**2
         obj[cx:cx+nx,cy:cy+ny] += self.probe.conjugate()*d.psi
       if "max" in self.method.lower(): #This is for Thibault2009-max
@@ -413,8 +445,7 @@ class Ptycho2D:
             self.params['learning_const_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
-        cx = x0//2+dx-nx//2
-        cy = y0//2+dy-ny//2
+        cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
         self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_const_object'])
     else:
         raise Exception('Unknown method: '+self.method)
@@ -426,7 +457,6 @@ class Ptycho2D:
     """
     from imProc import shift
     print "sub pix (update object)"
-    x0,y0 = self.obj.shape
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
       obj = np.zeros(self.obj.shape).astype(complex64)
@@ -434,8 +464,7 @@ class Ptycho2D:
       for d in self.views:          
         dx,dy = d.dx,d.dy #o positions of the scan
         obj_tmp = np.zeros_like(self.obj)
-        cx = x0//2-nx//2
-        cy = y0//2-ny//2
+        cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
         obj_tmp[cx:cx+nx,cy:cy+ny] = self.probe.conjugate()*d.psi
         self.obj += shift(obj_tmp,dx,dy)
         
@@ -455,8 +484,7 @@ class Ptycho2D:
             self.params['learning_const_object'] = 1 # learing constant, value of a=1 used in maiden2009 paper
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
-        cx = x0//2+dx-nx//2
-        cy = y0//2+dy-ny//2
+        cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
         self.obj[cx:cx+nx,cy:cy+ny] += ePIEupdate(self.probe,d.psi,d.psi0,self.params['learning_const_object'])
     else:
         raise Exception('Unknown method: '+self.method)
@@ -464,14 +492,12 @@ class Ptycho2D:
     
   def UpdateProbe(self,frame_index=None):
     nx,ny = self.probe.shape
-    x0,y0 = self.obj.shape    
     if "thibault2009" in self.method.lower():
       probe = np.zeros(self.probe.shape).astype(complex64)
       probenorm = np.zeros(self.probe.shape).astype(float32)
       for d in self.views:
         dx,dy = d.dx,d.dy
-        cx = x0//2+dx-nx//2
-        cy = y0//2+dy-ny//2
+        cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
         probenorm += abs(self.obj[cx:cx+nx,cy:cy+ny])**2
         probe += self.obj[cx:cx+nx,cy:cy+ny].conjugate()*d.psi
       if "max" in self.method.lower(): #Thisis for Thibault2009-max
@@ -489,8 +515,7 @@ class Ptycho2D:
 
         d = self.views[frame_index]
         dx,dy = d.dx,d.dy
-        cx = x0//2+dx-nx//2
-        cy = y0//2+dy-ny//2
+        cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
         self.probe += ePIEupdate(self.obj[cx:cx+nx,cy:cy+ny],d.psi,d.psi0,self.params['learning_const_probe'])
     else:
         raise Exception('Unknown method: '+self.method)
@@ -676,6 +701,119 @@ class Ptycho2D:
         np.save(resdir+'/probe0'+name_appendix,self.probe0)
         np.save(resdir+'/R'+name_appendix,self.Rarray)        
 
+
+
+
+"""
+Direct minimisation
+"""
+
+def image_flatten(im):
+    """
+    Flattens complex object into one dimensional vectro - first half is the real part, second half is the imaginary part. Inverse operation by image_reshape. 
+    """
+    im_real = im.real.flatten()
+    im_imag = im.imag.flatten()
+    return np.concatenate( (im_real,im_imag) )
+
+def image_reshape(x,x_shape):
+    """
+    Reshapes one-dimensional vector obtained by image_flatten back to a 2D complex image.
+    """
+    xr = x.reshape(2,-1);
+    im_real = xr[0].reshape(x_shape)
+    im_imag = xr[1].reshape(x_shape)
+    return im_real + 1j*im_imag
+
+#todo: make p.R() work for Poisson noise as well
+def directmin_f(x,p,which='both',noise='gauss', reg_fac=0, verbose=True):        
+    if which == 'both':
+        no = 2*np.prod(p.obj.shape)
+        p.obj = image_reshape(x[:no],p.obj.shape)
+        p.probe = image_reshape(x[no:],p.probe.shape)            
+    elif which == 'obj':
+        p.obj = image_reshape(x,p.obj.shape)            
+    elif which == 'probe':
+        p.probe = image_reshape(x,p.probe.shape)
+    p.CalcForward()
+    out = p.R(chi2=True)[0]
+    if reg_fac>0:
+        out += reg_fac*abs(reg(x,p.obj.shape)).astype(out.dtype)
+    if verbose: 
+        print out
+    return out
+    
+def directmin_f_der(x,p,which='both',noise='gauss',reg_fac=0):
+    if which == 'both':
+        no = 2*np.prod(p.obj.shape)
+        p.obj = image_reshape(x[:no],p.obj.shape)
+        p.probe = image_reshape(x[no:],p.probe.shape)            
+    elif which == 'obj':
+        p.obj = image_reshape(x,p.obj.shape)            
+    elif which == 'probe':
+        p.probe = image_reshape(x,p.probe.shape)
+    ###
+    der_obj = np.zeros_like(p.obj)
+    der_probe = np.zeros_like(p.probe)
+    px, py = p.probe.shape
+    posx,posy = get_pos(p)
+    for v in p.views:        
+        intensity_cal = abs(v.s_calc0)**2 
+        intensity_obs = abs(v.s_obs)**2 
+        if noise.lower() == 'gauss':
+            weird_factor = 2 # this should be one according to math but does not fit with approximated gradient. 
+            chi = weird_factor*2*v.s_calc0*(intensity_cal - intensity_obs)
+        elif noise.lower() == 'poisson':
+            weird_factor = 2 # this should be one according to math but does not fit with approximated gradient. same as for gauss!!!
+            chi = weird_factor*v.s_calc0*(intensity_obs - intensity_cal)/intensity_cal
+        
+        cx,cy = get_view_coord(p.obj.shape,p.probe.shape,(v.dx,v.dy))
+        ftchi = p.fft(chi,inverse=True)
+        if which in ('obj', 'both'):
+            der_obj[cx:cx+px,cy:cy+py] += p.probe * ftchi.conjugate()
+        if which in ('probe','both'):
+            der_probe += p.obj[cx:cx+px,cy:cy+py] * ftchi.conjugate()
+
+    if which in ('obj', 'both'):    
+        der_obj = der_obj.conjugate() # not sure why there is conjugate but with this it agrees with the numerical approximation
+    if which in ('probe', 'both'):            
+        der_probe = der_probe.conjugate()
+    
+    if which == 'both':
+        ders = np.concatenate( (image_flatten(der_obj), image_flatten(der_probe)) ) 
+    elif which == 'obj':
+        ders = image_flatten(der_obj)        
+    elif which == 'probe':
+        ders = image_flatten(der_probe)  
+    if reg_fac>0:
+        ders += reg_fac*reg_der(x,p.obj.shape)
+        
+    return ders
+
+def reg(x,sh):
+    """
+    Regularisation penalty for smoothness of the images in direct minimisation.
+    """
+    A = image_reshape(x,sh)
+    d1 = A[:-1,:]-A[1:,:]
+    d2 = A[:,:-1]-A[:,1:]
+    s1 = (d1*d1.conjugate()).sum()
+    s2 = (d2*d2.conjugate()).sum()
+    return s1+s2
+    
+def reg_der(x,sh):
+    A = image_reshape(x,sh)
+    Ac = A # according to my math there should be conjugate here (but this agrees with numerical approx), similar to directmin_f_der
+    A1 = np.zeros_like(Ac)
+    A2 = np.zeros_like(Ac)
+    A3 = np.zeros_like(Ac)
+    A4 = np.zeros_like(Ac)
+    A1[:-1,:] = Ac[1:,:]
+    A2[1:,:] = Ac[:-1,:]
+    A3[:,:-1] = Ac[:,1:]
+    A4[:,1:] = Ac[:,:-1]
+    weird_factor = 2 # according to my math this should be 1 (but this agrees with numereical approx) - this is the same as in the directmin_f_der
+    return weird_factor*image_flatten(4*Ac-A1-A2-A3-A4)
         
 """
 Simulation of the ptychographic data. Requires: 
@@ -1104,7 +1242,7 @@ class Simulation:
         else:
             self.scan.values = (posx,posy)
             
-    def show_illumination(self, log_values = False):
+    def show_illumination_sum(self, log_values = False):
         posx, posy = self.scan.values
         illum = np.zeros_like(self.obj_true.values)        
         nix,niy = illum.shape
@@ -1122,3 +1260,4 @@ class Simulation:
         plt.imshow(im2show,interpolation='Nearest',extent=(0,illum.shape[1],0,illum.shape[0]))
         plt.plot(posy+niy/2,-posx+nix/2,'*:k') # for "plot" the vetical axis is inverted compared to "imshow"
         plt.plot(posy+niy/2,-posx+nix/2,'xw')
+        return illum
