@@ -9,7 +9,7 @@ from __future__ import division
 import sys, os, time, glob
 import numpy as np
 
-from scipy import log10, sqrt, pi, exp, float32,complex64
+from scipy import log10, sqrt, pi, exp
 from scipy.fftpack import ifftshift, fftshift, fft2, ifft2
 from scipy.optimize import minimize
 
@@ -277,7 +277,7 @@ class PtychoDiffData2D:
   def __init__(self,s_obs,dx,dy):
     self.dx = dx # this is an amount of the shift between the different views
     self.dy = dy
-    self.s_obs = s_obs.astype(float32) #o observed data
+    self.s_obs = s_obs #o observed data
 
 def ePIEupdate(A,psi,psi0,const):
       "Maiden2009 update for either probe or object."      
@@ -287,28 +287,39 @@ class Ptycho2D:
   """
   Reconstruction of the ptychograhic data.
   """
-  def __init__(self,amplitudes,positions,probe0,obj0):
-    self.views = MakePtychoData(amplitudes, positions[0], positions[1])
+  def __init__(self, amplitudes, positions, probe0, obj0, prec='single'):
+    if prec is 'single':    # precision of the computation
+        self.DTYPE_REAL = np.float32    #dtype of the real arrays
+        self.DTYPE_CPLX = np.complex64    #dtype of the complex arrays
+    elif prec is 'double':
+        self.DTYPE_REAL = np.float64
+        self.DTYPE_CPLX = np.complex128
+    print 'Using %s precision.'%prec
+
+    self.views = MakePtychoData(self.DTYPE_REAL(amplitudes), positions[0], positions[1])
     self.nbproc = os.sysconf("SC_NPROCESSORS_ONLN")
-    self.probe = probe0.astype(complex64)
+    self.probe = probe0.astype(self.DTYPE_CPLX)
     self.probe0 = probe0.copy()
-    self.obj = obj0.astype(complex64)
+    self.obj = obj0.astype(self.DTYPE_CPLX)
     self.obj0 = obj0.copy()
 
     try: # to do: revise this to use fftshift(fft2(fftshift(A)))
       # use FFTW
-      import fftw3f # fftw for float32
-      self.fftw_data = np.zeros(self.views[0].s_obs.shape, dtype=np.complex64)
+      if self.DTYPE_CPLX is np.complex128: # double precision
+          import fftw3 as fftw
+      elif self.DTYPE_CPLX is np.complex64: # single precision
+          import fftw3f as fftw
+          
+      self.fftw_data = np.zeros(self.views[0].s_obs.shape, dtype=self.DTYPE_CPLX)
       # create a forward and backward fft plan
-      self.plan_fft = fftw3f.Plan(self.fftw_data,None, direction='forward', flags=['measure'],nthreads=4)
-      self.plan_ifft = fftw3f.Plan(self.fftw_data, None, direction='backward', flags=['measure'],nthreads=4)
+      self.plan_fft = fftw.Plan(self.fftw_data,None, direction='forward', flags=['measure'],nthreads=4)
+      self.plan_ifft = fftw.Plan(self.fftw_data, None, direction='backward', flags=['measure'],nthreads=4)
       self.useFFTW3 = True
       #o tmp=self.fft(self.obj,timing=True)
       print "Using FFTW3!"
     except:
       self.useFFTW3=False
-      print "FFTW3 not found :-("
-      
+      print "FFTW3 not found :-("      
       
   def fft(self,d,inverse=False,timing=False):
     
@@ -322,7 +333,6 @@ class Ptycho2D:
       out = fftshift(self.fftw_data.copy())          
       
     else:
-
       if inverse: 
           out = ifftshift(ifft2(ifftshift(d)))
       else: 
@@ -351,8 +361,8 @@ class Ptycho2D:
     Otherwise calculation is done for a single position.
     """
     if (dx!=None) and (dy!=None):
-      psi0 = np.zeros(self.probe.shape).astype(complex64)
-      ftpsi0 = np.zeros(self.probe.shape).astype(complex64)
+      psi0 = np.zeros(self.probe.shape).astype(self.DTYPE_CPLX)
+      ftpsi0 = np.zeros(self.probe.shape).astype(self.DTYPE_CPLX)
       nx,ny = self.probe.shape
       cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
       psi0 = self.obj[cx:cx+nx,cy:cy+ny]*self.probe # the first index is the vertical direction - top @ 0, second is the horiznontal - left @ 0      
@@ -374,8 +384,8 @@ class Ptycho2D:
     from imProc import shift
     print "sub pix (CalcForward)"    
     if (dx!=None) and (dy!=None):
-      psi0 = np.zeros(self.probe.shape).astype(complex64)
-      ftpsi0 =  np.zeros(self.probe.shape).astype(complex64)
+      psi0 = np.zeros(self.probe.shape).astype(self.DTYPE_CPLX)
+      ftpsi0 =  np.zeros(self.probe.shape).astype(self.DTYPE_CPLX)
       nx,ny = self.probe.shape
       cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
       obj_shift = shift(self.obj,-dx,-dy,verbose = False)
@@ -424,8 +434,8 @@ class Ptycho2D:
     """
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
-      obj = np.zeros(self.obj.shape).astype(complex64)
-      objnorm = np.zeros(self.obj.shape).astype(float32)
+      obj = np.zeros_like(self.obj)
+      objnorm = np.zeros_like(abs(self.obj))
       for d in self.views:          
         dx,dy = d.dx,d.dy #o positions of the scan
         cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
@@ -433,8 +443,7 @@ class Ptycho2D:
         obj[cx:cx+nx,cy:cy+ny] += self.probe.conjugate()*d.psi
       if "max" in self.method.lower(): #This is for Thibault2009-max
           self.obj = obj/objnorm.max()
-      else:
-        
+      else:       
         if 'reg_const_object' not in self.params.keys():
             self.params['reg_const_object'] = 1e-2        
         reg = self.params['reg_const_object']*objnorm.max() #empirical threshold
@@ -459,8 +468,8 @@ class Ptycho2D:
     print "sub pix (update object)"
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
-      obj = np.zeros(self.obj.shape).astype(complex64)
-      objnorm = np.zeros(self.obj.shape).astype(float32)
+      obj = np.zeros(self.obj.shape).astype(self.DTYPE_CPLX)
+      objnorm = np.zeros(self.obj.shape).astype(self.DTYPE_REAL)
       for d in self.views:          
         dx,dy = d.dx,d.dy #o positions of the scan
         obj_tmp = np.zeros_like(self.obj)
@@ -493,8 +502,8 @@ class Ptycho2D:
   def UpdateProbe(self,frame_index=None):
     nx,ny = self.probe.shape
     if "thibault2009" in self.method.lower():
-      probe = np.zeros(self.probe.shape).astype(complex64)
-      probenorm = np.zeros(self.probe.shape).astype(float32)
+      probe = np.zeros_like(self.probe)
+      probenorm = np.zeros_like(abs(self.probe))
       for d in self.views:
         dx,dy = d.dx,d.dy
         cx,cy = get_view_coord(self.obj.shape,self.probe.shape,(dx,dy))
@@ -522,7 +531,7 @@ class Ptycho2D:
           
   def SaveStateOfPsiHIO(self,state=0):      
       for d in self.views:          
-          initVal=np.zeros(np.append(1,d.psi0.shape),dtype=complex)
+          initVal=np.zeros(np.append(1,d.psi0.shape),dtype=self.DTYPE_CPLX)
           if hasattr(d,'psiState')==False: 
               d.psiState=initVal
           while d.psiState.shape[0]<(state+1): 
@@ -540,7 +549,7 @@ class Ptycho2D:
       for d in self.views:
           d.psi = d.psiState[0]+d.psi-d.psiState[1]
   
-  def R(self,i=None,chi2=False,mask=None,return_views=False):
+  def R(self, i=None, chi2=False, mask=None, return_views=False):
     if mask == None: 
         mask = 1.                
     if i!=None:
@@ -591,7 +600,7 @@ class Ptycho2D:
       showProgress(self.obj,self.probe, stit="%s: cycle %3d: R= %6.4f%%"%(self.method,i,r*100))      
                     
         
-  def Run(self,ncycle,method="Thibault2009",updateProbe=False,verbose=False,mask=None, subPix = False, params={}):
+  def Run(self, ncycle, method="Thibault2009", updateProbe=False, verbose=False, mask=None, subPix = False, params=None):
     """
     ncycle: number of iterations
     method:
@@ -602,6 +611,8 @@ class Ptycho2D:
     mask: insert the mask of valid pixels (bad, invalid or zero pixels are zeros)
     params: dicitionary with certain parameters for evaluation
     """
+    if params is None:
+        params = {}
     if isinstance(method, basestring):
         self.method = method
         self.params = {'method':method}
@@ -738,7 +749,7 @@ def directmin_f(x,p,which='both',noise='gauss', reg_fac=0, verbose=True):
     p.CalcForward()
     out = p.R(chi2=True)[0]
     if reg_fac>0:
-        out += reg_fac*abs(reg(x,p.obj.shape)).astype(out.dtype)
+        out += reg_fac*abs(reg(x,p.obj.shape)).astype(out.dtype)        
     if verbose: 
         print out
     return out
@@ -822,10 +833,8 @@ git clone git@github.com:aludnam/imProc.git
 
 For visualisation requires module plottools:
 git clone git@github.com:aludnam/plottools.git
-
-FZP module for simulation of the focussed beam by partially illumnated Fresnel zone plate
 """
-import Image, imProc, FZP, plotting        
+import Image, imProc, plotting        
 def get_img(index=0):    
     """
     Returns image (numpy array) from the path_list.
@@ -835,7 +844,7 @@ def get_img(index=0):
     path = os.path.dirname(sys.modules[__name__].__file__)
     path_list = "/Images/lena.tif", "/Images/devoogd.tif", "/Images/erika.tif"
     im = Image.open(path+path_list[index]) 
-    return np.float32(np.array(im))
+    return np.array(im)
     
 def gauss2D(im_size=(64,64),mu=(0,0),sigma=(1,1)):
     """
@@ -945,7 +954,7 @@ class Simulation:
     """
     Simulation of the ptychographic data.
     """
-    def __init__(self, obj=None, obj_info={}, probe=None, probe_info={}, scan=None, scan_info={}, data_info={}, verbose = 1):
+    def __init__(self, obj=None, obj_info={}, probe=None, probe_info={}, scan=None, scan_info={}, data_info={}, verbose=1, prec='single'):
         """
         obj_info: dictionary with   obj_info['type'] = ('real','real_imag','ampl_phase') # type of the object
                                     obj_info['phase_stretch'] = ps #  specify the stretch of the phase image (default is ps=2pi)
@@ -954,7 +963,7 @@ class Simulation:
                                     
         obj: specific value of obj can be passed (2D complex numpy array). obj_info can be passed as empty dictionary (default).
             
-        probe_info: dictionary with probe_info['type'] = ('flat', 'FZP', 'Gauss',) # type of the probe
+        probe_info: dictionary with probe_info['type'] = ('flat', 'Gauss',) # type of the probe
                                     probe_info['size'] = (sizex,sizey) # size of the porbe
                                     probe_info['sigma_pix'] = value # sigma for gaussian probe
                                     defaults set in update_default_probe
@@ -994,6 +1003,14 @@ class Simulation:
         d.print_info() # prints all the parameters of the simulation
                 
         """
+        if prec is 'single':    # precision of the computation
+            self.DTYPE_REAL = np.float32    #dtype of the real arrays
+            self.DTYPE_CPLX = np.complex64    #dtype of the complex arrays
+        elif prec is 'double':
+            self.DTYPE_REAL = np.float64
+            self.DTYPE_CPLX = np.complex128
+        print 'Using %s precision.'%prec
+        
         self.obj = Im(obj, obj_info)
         self.probe = Im(probe, probe_info)
         self.scan = Im(scan,scan_info)
@@ -1070,8 +1087,8 @@ class Simulation:
             rf = 1
         s_a = s_v[0]/rf, s_v[1]/rf                    
         self.make_obj_true(posx_max,posy_max) # pads the obj with zeros if necessary        
-        self.psi = Im(np.zeros((n, s_v[0], s_v[1]), dtype = np.complex64))        
-        intensity = np.zeros((n, s_a[0], s_a[1]), dtype = np.float64)
+        self.psi = Im(np.zeros((n, s_v[0], s_v[1]), dtype = self.DTYPE_CPLX))        
+        intensity = np.zeros((n, s_a[0], s_a[1]), dtype = self.DTYPE_REAL)
         if 'beam_stop_radius' in self.data_info:
             if 'beam_stop_transparency' not in self.data_info:
                 self.data_info['beam_stop_transparency'] = 0
@@ -1127,17 +1144,17 @@ class Simulation:
             obj = self.obj.values
             
         elif ('ampl' in obj_type) and ('phase' in obj_type):
-            im0 = get_img(0)
-            im1 = get_img(1)
+            im0 = self.DTYPE_REAL(get_img(0))
+            im1 = self.DTYPE_REAL(get_img(1))
             # Strethc the phase to interval (-phase_stretch/2, +phase_stretch/2)
             phase0 = im1 - im1.min()
             ps = 2*np.pi
-            phase_stretch = ps*phase0/float(phase0.max()) - ps/2.        
+            phase_stretch = ps*phase0/self.DTYPE_REAL(phase0.max()) - ps/2.        
             obj = im0 * np.exp(1j*phase_stretch)
             
         elif ('real' in obj_type) and ('imag' in obj_type):
-            im0 = get_img(0)
-            im1 = get_img(1)
+            im0 = self.DTYPE_REAL(get_img(0))
+            im1 = self.DTYPE_REAL(get_img(1))
             obj = im0 + 1j*im1
             
         elif obj_type.lower() == 'random':
@@ -1146,19 +1163,18 @@ class Simulation:
             obj = np.random.rand(s[0],s[1])*np.exp(1j*rand_phase)
             
         elif obj_type.lower() == 'flat':
-            obj = np.ones(info['shape']).astype(complex)
+            obj = np.ones(info['shape']).astype(self.DTYPE_CPLX)
             
         else:
             msg = "Unknown object type:", self.obj.info['type']
-            raise NameError(msg)
-            
+            raise NameError(msg)            
 
         if 'phase_stretch' in info:         
             phase = np.angle(obj)
             phase0 = phase - phase.min()                        
             if phase0.any():                
                 ps = info['phase_stretch']            
-                phase_stretch = ps * phase0/float(phase0.max()) - ps/2.
+                phase_stretch = ps * phase0/self.DTYPE_REAL(phase0.max()) - ps/2.
                 obj = abs(obj) * np.exp(1j*phase_stretch)
         
         if 'alpha_win' in info:
@@ -1166,7 +1182,7 @@ class Simulation:
             w = imProc.tukeywin2D(s, info['alpha_win'])    
             obj *= w # tuckey window to smooth edges (alpha_win)
             
-        self.obj.values = np.complex64(obj)
+        self.obj.values = self.DTYPE_CPLX(obj)
 
     def make_probe(self):
         """
@@ -1180,36 +1196,11 @@ class Simulation:
         if probe_type == 'custom':
             pass
         elif probe_type == 'flat':
-            self.probe.values = np.complex64(np.ones(info['shape']))
+            self.probe.values = self.DTYPE_CPLX(np.ones(info['shape']))
             
         elif probe_type == 'gauss':
-            self.probe.values = np.complex64(gauss2D(info['shape'], mu = (0,0), sigma = info['sigma_pix']))
+            self.probe.values = self.DTYPE_CPLX(gauss2D(info['shape'], mu = (0,0), sigma = info['sigma_pix']))
 
-        elif probe_type =='fzp': # partially illuminated Fresnel Zone Plate:
-            info['gpu_name'] = "GeForce"
-            info['wavelength'] = np.float32(12398.4/10030*1e-10)   # E=10 keV, April 2011 ID01
-            info['focal_length'] = np.float32(.112)
-            info['rmax'] = np.float32(100e-6)                       # radius of FZP
-            info['nr'],info['ntheta'] = np.int32(2048),np.int32(512)         # number of points for integration on FZP (for a full illumination)
-            info['r_cs'] = np.float32(40e-6)                         # Central stop radius
-            info['osa_z'],info['osa_r'] = np.float32(.119),np.float32(25e-6)    # OSA position and radius            
-            ps = info['shape']
-            pixsize = self.data_info['pix_size_direct_nm']
-            
-            y = np.linspace(-pixsize*ps[0]/2,+pixsize*(ps[0]/2-1),ps[0]).astype(np.float32)
-            x = y.copy()[:,np.newaxis]
-            xprobe, yprobe = x*1e-9, y*1e-9 # xc,yc are in nm, x/y/zprobe are in m
-            zprobe = info['focal_length']+.0003#+linspace(-.5e-3,.5e-3,256)
-            xprobe = (xprobe+(yprobe+zprobe)*0).astype(np.float32)
-            yprobe = (yprobe+(xprobe+zprobe)*0).astype(np.float32)
-            zprobe = (zprobe+(xprobe+yprobe)*0).astype(np.float32)
-            sourcex, sourcey, sourcez = np.float32(0e-6), np.float32(0e-6), np.float32(-50) # Source position (meters)            
-
-            probe,dt,flop = FZP.FZP_thread(x=xprobe, y=yprobe, z=zprobe, sourcex=sourcex, sourcey=sourcey, sourcez=sourcez, wavelength=info['wavelength'], focal_length=info['focal_length'], rmax=info['rmax'], fzp_xmin=40e-6, fzp_xmax=60e-6, fzp_nx=256, fzp_ymin=-30e-6, fzp_ymax=30e-6, fzp_ny=256, r_cs=info['r_cs'], osa_z=info['osa_z'], osa_r=info['osa_r'], nr=info['nr'], ntheta=info['ntheta'],gpu_name=info['gpu_name'])
-
-            self.probe.values = np.complex64(np.rot90(probe)) # horizontaly elongated
-            if self.verbose: 
-                print "dt=%9.5fms, %8.2f Gflops"%(dt*1e3,flop/1e9/dt)           
         else: 
             msg = "Unknown probe type:", self.probe.info['type']
             raise NameError(msg)

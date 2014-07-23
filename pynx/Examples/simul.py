@@ -31,12 +31,12 @@ nx,ny = ptycho.objShape(pos, ampl.shape[1:])
 # Evaluation method
 #method = 'Thibault2009'
 # or one can pass the method as a dictionry along with some parameteres of the update:
-method = {'method': 'Thibault2009', 'reg_const_object':0.001,'reg_const_probe':0.001} 
-#method = 'Maiden2009'
+#method = {'method': 'Thibault2009', 'reg_const_object':0.001,'reg_const_probe':0.001} 
+method = 'Maiden2009'
 #method={'method': 'Maiden2009','learning_const_object':1,'learning_const_probe':1}
 savethis = True
 
-for evaluation in (1,):
+for evaluation in (4,):
     print "\nEvaluation: %g" %evaluation            
 
     # Initial obj
