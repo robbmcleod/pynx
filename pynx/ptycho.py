@@ -17,6 +17,15 @@ from matplotlib import pyplot as plt
 from matplotlib import gridspec
 import matplotlib.cm as cm
 
+################################################
+################################################
+#
+# Auxiliary functions
+#
+################################################
+################################################
+
+
 def plotR(filename = "Results/R_*",showLegend = True, showNumbers = True, plotGraph = True, fontsize = 5):
     """
     Plots convergence curves.
@@ -145,7 +154,6 @@ def complex2rgbalin(s):
    rgba[:,:,3] = a
    return rgba
 
-  
 def objShape(pos, probe_shape):
     """
     Determines the required size for the reconstructed object. 
@@ -198,36 +206,6 @@ def showFT(p):
       plotting.im(np.log(abs(a[0])))
       plt.draw()        
 
-def R_pos(x, p):    
-    xr = x.reshape(2,-1);
-    for i,d in enumerate(p.views):
-        d.dx,d.dy = xr[0,i],xr[1,i]
-    
-    #p.Run(1,verbose=0,updateProbe=True,method='Thibault2009')
-    p.CalcForward()
-    print p.R()
-    return p.R()
-
-def RefinePos(p, method='Powell', opt={'disp':True, 'maxfeval':10}):
-    """
-    Refines positions of the ptychograhic dataset.
-    """
-    n = len(p.views)
-    posx = np.zeros(n)
-    posy = np.zeros(n)
-    for i,d in enumerate(p.views):
-        posx[i],posy[i] = d.dx,d.dy
-    args = p,
-    res = minimize(R_pos, np.concatenate( (posx,posy) ,axis=0) , args=args, method=method, options=opt)
-    return res.x.reshape(2,-1)
-    
-def RefinePosUpdate(p, n_cycles=3, method_refine='Powell', opt={'disp':True, 'maxfeval':10}, method_ptycho='Maiden2009', n_updates=100):
-    """
-    Refines positions of the ptychograhic dataset and cycles it with ptychographic updates. 
-    """
-    for i in range(n_cycles):
-        RefinePos(p,method = method_refine,opt=opt)
-        p.Run(n_updates,verbose=10,updateProbe=True,method=method_ptycho)
         
 def get_pos(p,show_plot=False):
     rx = np.zeros(len(p.views))
@@ -253,6 +231,36 @@ def get_view_coord(obj_shape, probe_shape, shift):
     cx = (obj_shape[0]-probe_shape[0])//2 + shift[0]
     cy = (obj_shape[1]-probe_shape[1])//2 + shift[1]
     return cx, cy
+    
+def gradPhase(p,im,mask):
+    x = np.linspace(-im.shape[0]/2,(im.shape[0]/2-1),im.shape[0]).astype(np.float32)
+    yy,xx = np.meshgrid(x,x)
+    oPhaseMasked = np.ma.masked_array(np.angle(im*np.exp(1j*2*np.pi*(xx*p[0]/im.shape[0]+yy*p[1]/im.shape[1]))),-mask)
+    dx,dy = np.gradient(oPhaseMasked)
+#    return sum(abs(dx[mask])+abs(dy[mask]))
+    return np.median(abs(dx[mask])+abs(dy[mask]))
+
+def minimizeGradPhase(im, mask_thr = 0.3, init_grad = [0,0]):
+    """
+    Minimises the gradient in the phase of the input image im. 
+    """
+    mask = (abs(im)/abs(im).max()) > mask_thr
+    res = minimize(gradPhase,init_grad, args=(im,mask,), method='Powell',options={'xtol': 1e-18, 'disp': True})
+    x = np.linspace(-im.shape[0]/2,(im.shape[0]/2-1),im.shape[0]).astype(np.float32)
+    yy,xx = np.meshgrid(x,x)
+    gradCorr=np.exp(1j*2*np.pi*(xx*res['x'][0]/im.shape[0]+yy*res['x'][1]/im.shape[1]))    
+    print res['x']
+    return im*gradCorr, gradCorr, mask, res['x']
+    
+
+################################################
+################################################
+#
+# Ptychographic iterative reconstruction
+#
+################################################
+################################################
+
 
 def MakePtychoData(amplitudes,dx,dy):
     """
@@ -593,13 +601,12 @@ class Ptycho2D:
     plt.imshow(complex2rgbalin(self.obj))
 
   def PrintProgress(self,r, i, dt):
-      print "Ptycho cycle %3d: R= %6.4f%%,  dt/cycle=%6.2fs"%(i,r*100,dt)
+      print "Ptycho cycle %3d: R = %6.4e%%,  dt/cycle = %6.2fs"%(i,r*100,dt)
       s_calc_logabs = np.log10(abs(self.views[0].s_calc0).clip(1e-6))*exp(1j*np.angle(self.views[0].s_calc0))
       s_obs0 = np.log10(self.views[0].s_obs.clip(1e-6))
       showProgress(s_calc_logabs,s_obs0,tit1='s_calc0',tit2='s_obs',figNum=101, stit="%s: cycle %3d: R= %6.4f%%"%(self.method,i,r*100))  
       showProgress(self.obj,self.probe, stit="%s: cycle %3d: R= %6.4f%%"%(self.method,i,r*100))      
-                    
-        
+                            
   def Run(self, ncycle, method="Thibault2009", updateProbe=False, verbose=False, mask=None, subPix = False, params=None):
     """
     ncycle: number of iterations
@@ -702,6 +709,43 @@ class Ptycho2D:
         print "Ptycho cycle %3d: R= %6.4f%%,  dt=%6.2fs"%(i,self.R()*100,time.time()-t0)
         if True:
               showProgress(self.obj,self.probe)
+
+  def RefinePos(self, method='Powell', opt={'disp':True, 'maxfeval':10}):
+      """
+      Refines positions of the ptychograhic dataset.
+      """
+      print "Refinement of the scan positions (using %s)."%(method)
+      print "You can stop at any time with 'ctrl+C', the results are stored in the object p.vews[i].dx, p.views[i].dy"
+      print "Should be followed by p.Run(...) to update probe and obj to the new positions."
+
+      px,py = get_pos(self)
+      args = self,
+      res = minimize(R_pos, np.concatenate( (px,py) ,axis=0) , args=args, method=method, options=opt)
+      return res.x.reshape(2,-1)
+
+  def RefinePosUpdate(self, n_cycles=3, method_refine='Powell', opt={'disp':True, 'maxfeval':10}, method_ptycho='Maiden2009', n_updates=100):
+      """
+      Refines positions of the ptychograhic dataset and cycles it with ptychographic updates. 
+      """
+      print "Refinement of the scan positions (using %s minimisation). %d cycles alternated with %s update to adjust both obj and probe. "%(method_refine, n_cycles,method_ptycho)
+
+      for i in range(n_cycles):
+          self.RefinePos(self, method = method_refine, opt=opt)
+          self.Run(n_updates, verbose=10, updateProbe=True, method=method_ptycho)
+
+  def DirectMin(self, which='obj', noise='gauss', reg_fac = 0., verbose=True, maxiter=1000):
+      """
+      Conjugate gradient based direct minimisation.
+      """
+      print "Direct minimisation of %s, with regularisation factor %1.2e."%(which,reg_fac)
+      print "You can stop at any time with 'ctrl+C', the results are stored in the object p (p.obj, p.probe)."
+      if which is 'obj':
+          resCG = minimize(directmin_f, image_flatten(self.obj), args=(self, which, noise, reg_fac), method='CG', jac=directmin_f_der,options={'disp': True, 'maxiter': maxiter})
+      else:
+          print "todo: To be properly tested... "
+          pass
+      return resCG
+      
     
   def SaveResults(self, resdir="./Results/", name_appendix = ""):
         if not(os.path.isdir(resdir)): os.mkdir(resdir)  
@@ -710,14 +754,37 @@ class Ptycho2D:
         np.save(resdir+'/probe' + name_appendix,self.probe)
         np.save(resdir+'/obj0'+name_appendix,self.obj0)
         np.save(resdir+'/probe0'+name_appendix,self.probe0)
-        np.save(resdir+'/R'+name_appendix,self.Rarray)        
+        np.save(resdir+'/R'+name_appendix,self.Rarray)    
 
+################################################
+################################################
+#
+# Refinement of the scan positions
+#
+################################################
+################################################
 
+def R_pos(x, p):    
+    xr = x.reshape(2,-1);
+    dlim = 10 # this is to avoid too large steps which can lead to loss of the scan position...
+    for i,d in enumerate(p.views):
+        if (abs(d.dx-xr[0,i]) < dlim) and (abs(d.dy-xr[1,i]) < dlim):
+            d.dx,d.dy = xr[0,i],xr[1,i]
+    
+    #p.Run(1,verbose=0,updateProbe=True,method='Thibault2009')
+    p.CalcForward()
+    out = p.R(chi2=True)[0]
+    print 'R = %.4e'%out
+    return out
+    
 
-
-"""
-Direct minimisation
-"""
+################################################
+################################################
+#
+# Direct minimisation
+#
+################################################
+################################################
 
 def image_flatten(im):
     """
@@ -737,7 +804,7 @@ def image_reshape(x,x_shape):
     return im_real + 1j*im_imag
 
 #todo: make p.R() work for Poisson noise as well
-def directmin_f(x,p,which='both',noise='gauss', reg_fac=0, verbose=True):        
+def directmin_f(x,p,which='obj',noise='gauss', reg_fac=0, verbose=True):        
     if which == 'both':
         no = 2*np.prod(p.obj.shape)
         p.obj = image_reshape(x[:no],p.obj.shape)
@@ -751,10 +818,10 @@ def directmin_f(x,p,which='both',noise='gauss', reg_fac=0, verbose=True):
     if reg_fac>0:
         out += reg_fac*abs(reg(x,p.obj.shape)).astype(out.dtype)        
     if verbose: 
-        print out
+        print 'R = %.4e'%out
     return out
     
-def directmin_f_der(x,p,which='both',noise='gauss',reg_fac=0):
+def directmin_f_der(x,p,which='obj',noise='gauss',reg_fac=0):
     if which == 'both':
         no = 2*np.prod(p.obj.shape)
         p.obj = image_reshape(x[:no],p.obj.shape)
@@ -825,15 +892,32 @@ def reg_der(x,sh):
     A4[:,1:] = Ac[:,:-1]
     weird_factor = 2 # according to my math this should be 1 (but this agrees with numereical approx) - this is the same as in the directmin_f_der
     return weird_factor*image_flatten(4*Ac-A1-A2-A3-A4)
-        
-"""
-Simulation of the ptychographic data. Requires: 
-Requires imProc module:
-git clone git@github.com:aludnam/imProc.git
+    
+def directmin_optimal_reg_factor(p):
+    fd = directmin_f_der(image_flatten(p.obj), p)
+    rd = reg_der(image_flatten(p.obj), p.obj.shape)
+    rat = abs(fd).max()/abs(rd).max()
+    nphot = 0
+    for d in p.views:
+        nphot += d.s_obs.sum() #total number of photons
+    rec = 0.01*p.obj.size**2/(p.views[0].s_obs.size*len(p.views)*nphot) # estimate from \cite{Thibault2012}
+    print 'Recomanded reg_fac = %.2e\n'%rec,    
+    print 'Equality of derivatives for reg_fac = %.2e'%rat
 
-For visualisation requires module plottools:
-git clone git@github.com:aludnam/plottools.git
-"""
+    return rec, rat
+################################################
+################################################
+#
+# Simulation of the ptychographic data.
+# Requires imProc module:
+# git clone git@github.com:aludnam/imProc.git
+#
+# For visualisation requires module plottools:
+# git clone git@github.com:aludnam/plottools.git
+#
+################################################
+################################################
+        
 import Image, imProc, plotting        
 def get_img(index=0):    
     """
