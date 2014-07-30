@@ -154,6 +154,86 @@ def complex2rgbalin(s):
    rgba[:,:,3] = a
    return rgba
 
+def colorwheel(text_col='black', fs=16):
+  """
+  Color wheel for phases in hsv colormap.
+  From: pyVincent/ptycho.py
+  """
+  xwheel=np.linspace(-1,1,100)
+  ywheel=np.linspace(-1,1,100)[:,np.newaxis]
+  rwheel=np.sqrt(xwheel**2+ywheel**2)
+  phiwheel=-np.arctan2(ywheel,xwheel)  # Need the - sign because imshow starts at (top,left)
+#  rhowheel=rwheel*np.exp(1j*phiwheel)
+  rhowheel=1*np.exp(1j*phiwheel)
+  plt.gca().set_axis_off()
+  rgba=complex2rgbalin(rhowheel*(rwheel<1))
+  plt.imshow(rgba,aspect='equal')
+  plt.text(1.1, 0.5,'$0$', fontsize=fs, horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes, color=text_col)
+  plt.text(-.1, 0.5,'$\pi$', fontsize=fs, horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes, color=text_col)
+
+def insertColorwheel(left=.7, bottom=.15, width=.1, height=.1,text_col='black', fs=16):
+    """
+    Inserts color wheel to the current axis.
+    """
+    plt.axes((left,bottom,width,height), axisbg='w')
+    colorwheel(text_col=text_col,fs=fs)
+
+def showCplx(im,mask=0,pixSize_um=1,showGrid=True,amplitudeLog = False,maskPhase = False, maskPhaseThr = 0.01, cmapAmplitude = 'jet', cmapPhase = 'hsv', scalePhaseImg = True, suptit = None, fontSize=20, suptit_fontSize=10, show_what = 'phase_amplitude'):
+    "Displays AMPLITUDE_PHASE or REAL_IMAG ('show_what') of the complex image in two subfigures."
+    print show_what.lower()
+    if amplitudeLog:
+        amplitude = np.log10(abs(im)) 
+    else:
+        amplitude = abs(im)
+    phase = np.angle(im)
+    plt.figure(figsize=(8,4))
+    plt.subplot(121)
+    if show_what is 'real_imag':
+        plt.imshow(im.real,extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um),cmap=cmapAmplitude,interpolation='Nearest')
+    else: 
+        plt.imshow(amplitude,extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um),cmap=cmapAmplitude,interpolation='Nearest')    
+    if showGrid: 
+        plt.grid(color='w')
+    if pixSize_um !=1:
+        plt.xlabel('microns',fontsize = fontSize)                
+        plt.ylabel('microns',fontsize = fontSize)    
+    if suptit == None:
+        if show_what.lower() is 'real_imag':
+            plt.title('Real',fontsize = fontSize)                
+        else:
+            plt.title('Amplitude',fontsize = fontSize)
+    plt.xticks(fontsize=fontSize)
+    plt.yticks(fontsize=fontSize)        
+          
+    plt.subplot(122)
+    if scalePhaseImg:
+        vminPhase = -np.pi
+        vmaxPhase = np.pi
+    else:
+        vminPhase = phase.min()
+        vmaxPhase = phase.max()
+    if show_what.lower() is 'real_imag':        
+        plt.imshow(im.imag,cmap=cmapPhase,interpolation='Nearest',extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um))
+    else:
+        plt.imshow(np.ma.masked_array(phase,mask),cmap=cmapPhase,interpolation='Nearest',vmin=vminPhase,vmax=vmaxPhase,extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um))
+    if showGrid:
+        plt.grid(color='k')
+    if pixSize_um !=1:
+        plt.xlabel('microns',fontsize = fontSize)                
+        plt.ylabel('microns',fontsize = fontSize)        
+    if suptit == None:
+        if show_what.lower() is 'real_imag':
+            plt.title('Imag',fontsize = fontSize)                
+        else:
+            plt.title('Phase',fontsize = fontSize)
+    plt.xticks(fontsize=fontSize)
+    plt.yticks(fontsize=fontSize)        
+    if cmapPhase == 'hsv':
+        insertColorwheel(left=.85, fs=fontSize)        
+    if suptit != None:
+        plt.suptitle(suptit,fontsize = suptit_fontSize)
+    plt.tight_layout()
+
 def objShape(pos, probe_shape):
     """
     Determines the required size for the reconstructed object. 
@@ -200,10 +280,8 @@ def showFT(p):
               a=d.s_calc0[np.newaxis,:]
           else:
               a=np.concatenate((a,d.s_calc0[np.newaxis,:]),axis=0)          
-      #plt.close(101)
-      #plotting.imTiles(np.log(abs(a)))
       plt.figure()
-      plotting.im(np.log(abs(a[0])))
+      plt.imshow(np.log(abs(a[0])))
       plt.draw()        
 
         
@@ -233,9 +311,11 @@ def get_view_coord(obj_shape, probe_shape, shift):
     return cx, cy
     
 def gradPhase(p,im,mask):
-    x = np.linspace(-im.shape[0]/2,(im.shape[0]/2-1),im.shape[0]).astype(np.float32)
-    yy,xx = np.meshgrid(x,x)
-    oPhaseMasked = np.ma.masked_array(np.angle(im*np.exp(1j*2*np.pi*(xx*p[0]/im.shape[0]+yy*p[1]/im.shape[1]))),-mask)
+    x = np.linspace(-pi,pi,im.shape[0]).astype(np.float32)
+    y = np.linspace(-pi,pi,im.shape[1]).astype(np.float32)
+    yy,xx = np.meshgrid(x,y)
+    #oPhaseMasked = np.ma.masked_array(np.angle(im*np.exp(1j*2*np.pi*(xx*p[0]/im.shape[0]+yy*p[1]/im.shape[1]))),-mask)
+    oPhaseMasked = np.ma.masked_array(np.angle(im*np.exp(1j*(xx*p[0]+yy*p[1]))),-mask)
     dx,dy = np.gradient(oPhaseMasked)
 #    return sum(abs(dx[mask])+abs(dy[mask]))
     return np.median(abs(dx[mask])+abs(dy[mask]))
@@ -246,13 +326,48 @@ def minimizeGradPhase(im, mask_thr = 0.3, init_grad = [0,0]):
     """
     mask = (abs(im)/abs(im).max()) > mask_thr
     res = minimize(gradPhase,init_grad, args=(im,mask,), method='Powell',options={'xtol': 1e-18, 'disp': True})
-    x = np.linspace(-im.shape[0]/2,(im.shape[0]/2-1),im.shape[0]).astype(np.float32)
-    yy,xx = np.meshgrid(x,x)
-    gradCorr=np.exp(1j*2*np.pi*(xx*res['x'][0]/im.shape[0]+yy*res['x'][1]/im.shape[1]))    
+    x = np.linspace(-pi,pi,im.shape[0]).astype(np.float32)
+    y = np.linspace(-pi,pi,im.shape[1]).astype(np.float32)
+    yy,xx = np.meshgrid(x,y)
+    gradCorr=np.exp(1j*(xx*res['x'][0] + yy*res['x'][1]))    
     print res['x']
     return im*gradCorr, gradCorr, mask, res['x']
     
 
+def shift(data, deltax, deltay, phase=0, return_real=None,verbose=True):
+    """
+    FFT-based sub-pixel image shift
+    
+    deltax: shift in vertical direction (first index in numpy array)
+    deltay: shift in horizontal direction (second index in numpy array)
+    phase: adds additional phase offset
+    return_real: returns the real value of the shifted image (without residual phase due to shift)
+    
+    http://code.google.com/p/agpy/source/browse/trunk/AG_fft_tools/shift.py?r=536
+    http://www.mathworks.com/matlabcentral/fileexchange/18401-efficient-subpixel-image-registration-by-cross-correlation/content/html/efficient_subpixel_registration.html
+
+    Will turn NaNs into zeros
+    """
+    complex_data = isinstance(data.flatten()[0],(complex,np.complexfloating))
+    if return_real == None:
+        if complex_data: return_real = False
+        else: return_real = True
+        
+    if verbose:
+        print "Shifting image by [%g,%g] pixels." %(deltax,deltay)    
+    if np.any(np.isnan(data)):
+        data = np.nan_to_num(data)
+    nx,ny = data.shape
+    Nx = np.linspace(-np.pi,np.pi,nx)
+    Ny = np.linspace(-np.pi,np.pi,ny)
+    Ny,Nx = np.meshgrid(Ny,Nx)
+    ftdata =fftshift(fft2(fftshift(data)))
+    phasegrad = -(deltax*Nx + deltay*Ny)
+    gg = ifftshift(ifft2(ifftshift(ftdata * np.exp(1j*phasegrad))))#* np.exp(-1j*phase))        
+    if return_real:
+        return np.real(gg)
+    else:
+        return gg
 ################################################
 ################################################
 #
@@ -389,7 +504,6 @@ class Ptycho2D:
     """
     Calculate data from the object and probe. Subpixel shift.
     """
-    from imProc import shift
     print "sub pix (CalcForward)"    
     if (dx!=None) and (dy!=None):
       psi0 = np.zeros(self.probe.shape).astype(self.DTYPE_CPLX)
@@ -472,7 +586,6 @@ class Ptycho2D:
     This is equation from setting gradient of the square-of differences between the measured 
     and estimated wrt to Object to zero.  
     """
-    from imProc import shift
     print "sub pix (update object)"
     nx,ny = self.probe.shape        
     if "thibault2009" in self.method.lower():
@@ -900,7 +1013,7 @@ def directmin_optimal_reg_factor(p):
     nphot = 0
     for d in p.views:
         nphot += d.s_obs.sum() #total number of photons
-    rec = 0.01*p.obj.size**2/(p.views[0].s_obs.size*len(p.views)*nphot) # estimate from \cite{Thibault2012}
+    rec = 0.01/(p.obj.size**2/(p.views[0].s_obs.size*len(p.views)*nphot)) # estimate from \cite{Thibault2012}
     print 'Recomanded reg_fac = %.2e\n'%rec,    
     print 'Equality of derivatives for reg_fac = %.2e'%rat
 
@@ -909,16 +1022,11 @@ def directmin_optimal_reg_factor(p):
 ################################################
 #
 # Simulation of the ptychographic data.
-# Requires imProc module:
-# git clone git@github.com:aludnam/imProc.git
-#
-# For visualisation requires module plottools:
-# git clone git@github.com:aludnam/plottools.git
 #
 ################################################
 ################################################
         
-import Image, imProc, plotting        
+import Image
 def get_img(index=0):    
     """
     Returns image (numpy array) from the path_list.
@@ -950,6 +1058,44 @@ def make_beam_stop(im_size=(256,256), radius = 10):
     yy,xx = np.meshgrid(y,x) # the first coordinate is vetical, second is horizontal!
     return xx**2 + yy**2 >= radius**2
 
+def rebin(a, npix):
+    sh = a.shape[0]/npix, npix, a.shape[1]/npix, npix
+    return a.reshape(sh).sum(-1).sum(1)
+
+def tukeywin(window_length, alpha=0.5):    
+    '''The Tukey window, also known as the tapered cosine window, can be regarded as a cosine lobe of width \alpha * N / 2
+    that is convolved with a rectangle window of width (1 - \alpha / 2). At \alpha = 1 it becomes rectangular, and
+    at \alpha = 0 it becomes a Hann window.
+ 
+    Source: https://github.com/berceanu/gp-linear-response/blob/master/opo.py
+ 
+    '''
+    # Special cases
+    if alpha <= 0:
+        return np.ones(window_length) #rectangular window
+    elif alpha >= 1:
+        return np.hanning(window_length)
+ 
+    # Normal case
+    x = np.linspace(0, 1, window_length)
+    w = np.ones(x.shape)
+ 
+    # first condition 0 <= x < alpha/2
+    first_condition = x<alpha/2
+    w[first_condition] = 0.5 * (1 + np.cos(2*np.pi/alpha * (x[first_condition] - alpha/2) ))
+ 
+    # second condition already taken care of
+ 
+    # third condition 1 - alpha / 2 <= x <= 1
+    third_condition = x>=(1 - alpha/2)
+    w[third_condition] = 0.5 * (1 + np.cos(2*np.pi/alpha * (x[third_condition] - 1 + alpha/2))) 
+ 
+    return w
+    
+def tukeywin2D(window_size, alpha=0.5):
+    w1 = tukeywin(window_size[0],alpha)
+    w2 = tukeywin(window_size[0],alpha)    
+    return np.outer(w1,w2)
 
 def spiral_archimedes(a,n):
   """" Creates np points spiral of step a, with a between successive points
@@ -999,7 +1145,7 @@ def psi(obj, probe, shift_val, border):
     ox1, ox2 = sxr - border, sxr + probe.shape[0] + border 
     oy1, oy2 = syr - border, syr + probe.shape[1] + border 
     
-    return probe*imProc.shift(obj[ox1:ox2,oy1:oy2], shift_sub[0], shift_sub[1],verbose=False)[border:-border,border:-border]
+    return probe*shift(obj[ox1:ox2,oy1:oy2], shift_sub[0], shift_sub[1],verbose=False)[border:-border,border:-border]
     
 class Im: 
     def __init__(self,values=None, info={}):
@@ -1030,7 +1176,7 @@ class Im:
             plt.ylabel('pos_ver [pixels]')
             plt.grid(b=True)
         elif np.ndim(self.values) < 3: # for 2D complex images
-            plotting.showCplx(self.values)
+            showCplx(self.values)
         else:
             pass
             
@@ -1042,7 +1188,7 @@ class Simulation:
         """
         obj_info: dictionary with   obj_info['type'] = ('real','real_imag','ampl_phase') # type of the object
                                     obj_info['phase_stretch'] = ps #  specify the stretch of the phase image (default is ps=2pi)
-                                    obj_info['alpha_win'] = a # ratio of the obj edge to be dimmed down by imProc.tukeywin2D. This is to artefact from sharp edges of the object. 
+                                    obj_info['alpha_win'] = a # ratio of the obj edge to be dimmed down by tukeywin2D. This is to artefact from sharp edges of the object. 
                                     defaults set in update_default_obj
                                     
         obj: specific value of obj can be passed (2D complex numpy array). obj_info can be passed as empty dictionary (default).
@@ -1189,7 +1335,7 @@ class Simulation:
             intensity_tmp *= beam_stop                            
             
             if rf > 1: # rebin_factor
-                intensity[index] = imProc.rebin(intensity_tmp,rf)            
+                intensity[index] = rebin(intensity_tmp,rf)            
                 if (self.verbose and index == (len(posx)-1)): print "\nBinning data by", rf
             else:
                 intensity[index] = intensity_tmp
@@ -1263,7 +1409,7 @@ class Simulation:
         
         if 'alpha_win' in info:
             s =  obj.shape
-            w = imProc.tukeywin2D(s, info['alpha_win'])    
+            w = tukeywin2D(s, info['alpha_win'])    
             obj *= w # tuckey window to smooth edges (alpha_win)
             
         self.obj.values = self.DTYPE_CPLX(obj)
@@ -1326,7 +1472,6 @@ class Simulation:
             startx = nix/2+sx-npx/2
             starty = niy/2+sy-npy/2
             illum[startx:startx+npx,starty:starty+npy] += self.probe.values
-        #plotting.showCplx(illum)
         plt.figure()
         if log_values:
             im2show = np.log10(abs(illum))

@@ -36,7 +36,7 @@ method = 'Maiden2009'
 #method={'method': 'Maiden2009','learning_const_object':1,'learning_const_probe':1}
 savethis = True
 
-for evaluation in (4,):
+for evaluation in (1,2,3,4):
     print "\nEvaluation: %g" %evaluation            
 
     # Initial obj
@@ -62,6 +62,6 @@ for evaluation in (4,):
     if savethis:
         resdir='Results'
         #appApp = ('_scanINT_R%.4f' % p.R()).replace('.', '-') #'_R'+str(int(p.R()*10000))          
-        appApp =''
+        appApp ='pap'
         nameApp='_niterUpdateObj'+str(p.niterUpProbeFalse)+'_niterUpdateObjProbe'+str(p.niterUpProbeTrue)+'_method'+p.method+'_eval'+ str(evaluation)+appApp
         p.SaveResults(resdir=resdir, name_appendix = nameApp)
