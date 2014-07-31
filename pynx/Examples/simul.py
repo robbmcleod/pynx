@@ -12,7 +12,7 @@ import ptycho
 obj_info = {'type':'phase_ampl', 'phase_stretch':pi/5, 'alpha_win':.2} # or one can pass the obj (2D complex image) into the Simulation: s = ptycho.Simulation(obj = img) ....
 probe_info = {'type':'gauss','sigma_pix': (20,40),'shape': (256,256)} # 'FZP', or 'flat' are other possibilities
 scan_info = {'type': 'spiral', 'scan_step_pix': 30, 'n_scans': 50} #50 scan positions correspond to 4 turns, 78 to 5 turns, 113 to 6 turns 
-data_info = {'pix_size_direct_nm': 10, 'num_phot_max': 1e6, 'bg': 0}
+data_info = {'pix_size_direct_nm': 10, 'num_phot_max': 1e9, 'bg': 0}
 
 # Initialisation of the simulation with specivied parameters, specific <object>, <probe> or <scan>positions can be passed as s = ptycho.Simulation(obj=<object>, probe=<probe>, scan = <scan>) omitting obj_info, probe_info or scan_info (or passing it as empty dictionary "{}")
 s = ptycho.Simulation(obj_info=obj_info, probe_info=probe_info, scan_info=scan_info, data_info=data_info)
@@ -29,14 +29,14 @@ ampl = s.amplitude.values # square root of the measured diffraction pattern inte
 nx,ny = ptycho.objShape(pos, ampl.shape[1:])
 
 # Evaluation method
-#method = 'Thibault2009'
+method = 'Thibault2009'
 # or one can pass the method as a dictionry along with some parameteres of the update:
 #method = {'method': 'Thibault2009', 'reg_const_object':0.001,'reg_const_probe':0.001} 
-method = 'Maiden2009'
+#method = 'Maiden2009'
 #method={'method': 'Maiden2009','learning_const_object':1,'learning_const_probe':1}
 savethis = True
 
-for evaluation in (1,2,3,4):
+for evaluation in (1,):
     print "\nEvaluation: %g" %evaluation            
 
     # Initial obj

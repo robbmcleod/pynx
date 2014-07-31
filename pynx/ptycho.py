@@ -178,7 +178,7 @@ def insertColorwheel(left=.7, bottom=.15, width=.1, height=.1,text_col='black', 
     plt.axes((left,bottom,width,height), axisbg='w')
     colorwheel(text_col=text_col,fs=fs)
 
-def showCplx(im,mask=0,pixSize_um=1,showGrid=True,amplitudeLog = False,maskPhase = False, maskPhaseThr = 0.01, cmapAmplitude = 'jet', cmapPhase = 'hsv', scalePhaseImg = True, suptit = None, fontSize=20, suptit_fontSize=10, show_what = 'phase_amplitude'):
+def showCplx(im,mask=0,pixSize_um=1,showGrid=True,amplitudeLog = False,maskPhase = False, maskPhaseThr = 0.01, cmapAmplitude = 'jet', cmapPhase = 'hsv', scalePhaseImg = True, suptit = None, fontSize=20, suptit_fontSize=10, show_what = 'amplitude_phase', hideTicks=False):
     "Displays AMPLITUDE_PHASE or REAL_IMAG ('show_what') of the complex image in two subfigures."
     print show_what.lower()
     if amplitudeLog:
@@ -188,7 +188,7 @@ def showCplx(im,mask=0,pixSize_um=1,showGrid=True,amplitudeLog = False,maskPhase
     phase = np.angle(im)
     plt.figure(figsize=(8,4))
     plt.subplot(121)
-    if show_what is 'real_imag':
+    if show_what.lower() is 'real_imag':
         plt.imshow(im.real,extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um),cmap=cmapAmplitude,interpolation='Nearest')
     else: 
         plt.imshow(amplitude,extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um),cmap=cmapAmplitude,interpolation='Nearest')    
@@ -202,8 +202,13 @@ def showCplx(im,mask=0,pixSize_um=1,showGrid=True,amplitudeLog = False,maskPhase
             plt.title('Real',fontsize = fontSize)                
         else:
             plt.title('Amplitude',fontsize = fontSize)
-    plt.xticks(fontsize=fontSize)
-    plt.yticks(fontsize=fontSize)        
+
+    if hideTicks:
+        plt.xticks([])
+        plt.yticks([])
+    else:
+        plt.xticks(fontsize=fontSize)
+        plt.yticks(fontsize=fontSize)
           
     plt.subplot(122)
     if scalePhaseImg:
@@ -218,20 +223,30 @@ def showCplx(im,mask=0,pixSize_um=1,showGrid=True,amplitudeLog = False,maskPhase
         plt.imshow(np.ma.masked_array(phase,mask),cmap=cmapPhase,interpolation='Nearest',vmin=vminPhase,vmax=vmaxPhase,extent=(0,im.shape[1]*pixSize_um,0,im.shape[0]*pixSize_um))
     if showGrid:
         plt.grid(color='k')
+
     if pixSize_um !=1:
         plt.xlabel('microns',fontsize = fontSize)                
-        plt.ylabel('microns',fontsize = fontSize)        
+        plt.ylabel('microns',fontsize = fontSize)
+
     if suptit == None:
-        if show_what.lower() is 'real_imag':
+        if show_what.lower() is  'real_imag':
             plt.title('Imag',fontsize = fontSize)                
         else:
             plt.title('Phase',fontsize = fontSize)
-    plt.xticks(fontsize=fontSize)
-    plt.yticks(fontsize=fontSize)        
+
+    if hideTicks:
+        plt.xticks([])
+        plt.yticks([])
+    else:
+        plt.xticks(fontsize=fontSize)
+        plt.yticks(fontsize=fontSize)
+
     if cmapPhase == 'hsv':
         insertColorwheel(left=.85, fs=fontSize)        
+        
     if suptit != None:
         plt.suptitle(suptit,fontsize = suptit_fontSize)
+        
     plt.tight_layout()
 
 def objShape(pos, probe_shape):
@@ -677,9 +692,8 @@ class Ptycho2D:
       calc = (abs(self.views[i].s_calc0)**2)*mask
       obs = (abs(self.views[i].s_obs)**2)*mask
       #scalef = (calc*obs).sum()/(calc**2).sum()
-      scalef = 1
-      tmpR = (abs(calc*scalef-obs)**2).sum()
-      rnorm = (obs**2).sum()
+      tmpR = ((calc-obs)**2).sum()
+      rnorm = (obs**2).sum() # todo: this normalisation does not make much sense?
     else:
       tmpR,rnorm = 0,0
       n_views = len(self.views)
@@ -689,7 +703,7 @@ class Ptycho2D:
         R_view[i], rnorm_view[i]= self.R(i,chi2=True,mask=mask)
               
       tmpR += R_view.sum()
-      rnorm += rnorm_view.sum()      
+      rnorm += rnorm_view.sum()
     if chi2: 
         if return_views:
             return tmpR, rnorm, R_view, rnorm_view        
@@ -755,7 +769,7 @@ class Ptycho2D:
           t0=time.time()
           #o multiplies object * probe
           if subPix: 
-              self.CalcForward_SubPix() 
+              self.CalcForward_SubPix() # todo: this needs to be tested
           else:               
               self.CalcForward() 
               
@@ -771,7 +785,7 @@ class Ptycho2D:
               if updateProbe: 
                   self.UpdateProbe()
           #self.Normalize(method="probe") # keep probe nomalied: probe.sum()=1
-          self.Rarray=np.append(self.Rarray,self.R(mask=self.mask))
+          self.Rarray = np.append(self.Rarray,self.R(mask=self.mask))
           if verbose:
             if i%verbose==0:
                 self.PrintProgress(self.Rarray[-1],i,time.time()-t0)
@@ -823,28 +837,28 @@ class Ptycho2D:
         if True:
               showProgress(self.obj,self.probe)
 
-  def RefinePos(self, method='Powell', opt={'disp':True, 'maxfeval':10}):
+  def RefinePos(self, method_min='Powell', opt={'disp':True, 'maxfeval':10}):
       """
       Refines positions of the ptychograhic dataset.
       """
-      print "Refinement of the scan positions (using %s)."%(method)
+      print "Refinement of the scan positions (using %s)."%(method_min)
       print "You can stop at any time with 'ctrl+C', the results are stored in the object p.vews[i].dx, p.views[i].dy"
       print "Should be followed by p.Run(...) to update probe and obj to the new positions."
 
       px,py = get_pos(self)
       args = self,
-      res = minimize(R_pos, np.concatenate( (px,py) ,axis=0) , args=args, method=method, options=opt)
+      res = minimize(R_pos, np.concatenate( (px,py) ,axis=0) , args=args, method=method_min, options=opt)
       return res.x.reshape(2,-1)
 
-  def RefinePosUpdate(self, n_cycles=3, method_refine='Powell', opt={'disp':True, 'maxfeval':10}, method_ptycho='Maiden2009', n_updates=100):
+  def RefinePosUpdate(self, n_cycles=3, method_min='Powell', opt={'disp':True, 'maxfeval':10}, method_ptycho='Maiden2009', n_iter_ptycho=100):
       """
       Refines positions of the ptychograhic dataset and cycles it with ptychographic updates. 
       """
-      print "Refinement of the scan positions (using %s minimisation). %d cycles alternated with %s update to adjust both obj and probe. "%(method_refine, n_cycles,method_ptycho)
+      print "Refinement of the scan positions (using %s minimisation). %d cycles alternated with %s update to adjust both obj and probe. "%(method_min, n_cycles,method_ptycho)
 
       for i in range(n_cycles):
-          self.RefinePos(self, method = method_refine, opt=opt)
-          self.Run(n_updates, verbose=10, updateProbe=True, method=method_ptycho)
+          self.RefinePos(method_min=method_min, opt=opt)
+          self.Run(n_iter_ptycho, verbose=10, updateProbe=True, method=method_ptycho)
 
   def DirectMin(self, which='obj', noise='gauss', reg_fac = 0., verbose=True, maxiter=1000):
       """
@@ -1010,14 +1024,14 @@ def directmin_optimal_reg_factor(p):
     fd = directmin_f_der(image_flatten(p.obj), p)
     rd = reg_der(image_flatten(p.obj), p.obj.shape)
     rat = abs(fd).max()/abs(rd).max()
-    nphot = 0
-    for d in p.views:
-        nphot += d.s_obs.sum() #total number of photons
-    rec = 0.01/(p.obj.size**2/(p.views[0].s_obs.size*len(p.views)*nphot)) # estimate from \cite{Thibault2012}
-    print 'Recomanded reg_fac = %.2e\n'%rec,    
+    #nphot = 0
+    #for d in p.views:
+    #    nphot += (d.s_obs**2).sum() #total number of photons
+    #rec = 0.01/(p.obj.size**2/(p.views[0].s_obs.size*len(p.views)*nphot)) # estimate from \cite{Thibault2012}
+    #print 'Recomanded reg_fac = %.2e\n (This is not really tested see \cite{Thibault2012})'%rec,    
     print 'Equality of derivatives for reg_fac = %.2e'%rat
 
-    return rec, rat
+    return rat
 ################################################
 ################################################
 #
